@@ -8,15 +8,26 @@ public actor BeryndaAPIClient {
     private let transport: any HTTPTransport
     private let decoder: JSONDecoder
     private let language: @Sendable () -> String
+    private let retryPolicy: RetryPolicy
+    private let sleeper: @Sendable (TimeInterval) async throws -> Void
+    private let jitter: @Sendable () -> Double
 
     public init(
         baseURL: URL,
         transport: any HTTPTransport = URLSessionTransport(),
-        language: @escaping @Sendable () -> String = { "uk" }
+        language: @escaping @Sendable () -> String = { "uk" },
+        retryPolicy: RetryPolicy = RetryPolicy(),
+        sleeper: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        },
+        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0.8...1.2) }
     ) {
         self.baseURL = baseURL
         self.transport = transport
         self.language = language
+        self.retryPolicy = retryPolicy
+        self.sleeper = sleeper
+        self.jitter = jitter
         self.decoder = JSONDecoder()
     }
 
@@ -44,11 +55,12 @@ public actor BeryndaAPIClient {
     public func data(
         _ endpoint: APIEndpoint,
         accept: String = "*/*",
-        maximumBytes: Int? = nil
+        maximumBytes: Int = 5 * 1_024 * 1_024
     ) async throws -> HTTPPayload {
         guard let url = endpoint.url(relativeTo: baseURL) else {
             throw APIError.invalidConfiguration
         }
+        guard maximumBytes > 0 else { throw APIError.invalidConfiguration }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -57,55 +69,119 @@ public actor BeryndaAPIClient {
         request.setValue(language(), forHTTPHeaderField: "Accept-Language")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-ID")
 
-        let data: Data
-        let response: HTTPURLResponse
-        do {
-            (data, response) = try await transport.data(for: request)
-        } catch let error as APIError {
-            throw error
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw APIError.transport
-        }
+        var attempt = 1
+        while true {
+            try Task.checkCancellation()
 
-        switch response.statusCode {
-        case 200..<300:
-            let payload = HTTPPayload(
-                data: data,
-                contentType: response.value(forHTTPHeaderField: "Content-Type")?
-                    .split(separator: ";", maxSplits: 1)
-                    .first
-                    .map { String($0).lowercased() },
-                expectedLength: response.expectedContentLength >= 0
-                    ? response.expectedContentLength
-                    : nil
-            )
-            if let maximumBytes {
-                if let expectedLength = payload.expectedLength,
-                   expectedLength > Int64(maximumBytes) {
-                    throw APIError.responseTooLarge
-                }
-                guard payload.data.count <= maximumBytes else {
-                    throw APIError.responseTooLarge
-                }
+            let data: Data
+            let response: HTTPURLResponse
+            do {
+                (data, response) = try await transport.data(
+                    for: request,
+                    maximumBytes: maximumBytes
+                )
+            } catch let error as APIError {
+                throw error
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                try Task.checkCancellation()
+                throw APIError.transport
             }
-            return payload
-        case 401:
-            throw APIError.unauthorized
-        case 403:
-            throw APIError.forbidden
-        case 404:
-            throw APIError.notFound
-        case 429:
-            let retry = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
-            throw APIError.rateLimited(retryAfter: retry)
-        default:
-            throw APIError.server(
-                status: response.statusCode,
-                requestID: response.value(forHTTPHeaderField: "X-Request-ID")
-            )
+
+            guard data.count <= maximumBytes else {
+                throw APIError.responseTooLarge
+            }
+            if response.expectedContentLength > Int64(maximumBytes) {
+                throw APIError.responseTooLarge
+            }
+
+            if response.statusCode == 429 || Self.retryableServerStatuses.contains(response.statusCode),
+               attempt < retryPolicy.maximumAttempts {
+                let retryAfter = response.statusCode == 429 ? parseRetryAfter(response) : nil
+                let delay = retryPolicy.delay(
+                    afterAttempt: attempt,
+                    retryAfter: retryAfter,
+                    jitter: jitter()
+                )
+                attempt += 1
+                try await sleeper(delay)
+                continue
+            }
+
+            let context = errorContext(data: data, response: response)
+            switch response.statusCode {
+            case 200..<300:
+                return HTTPPayload(
+                    data: data,
+                    contentType: response.value(forHTTPHeaderField: "Content-Type")?
+                        .split(separator: ";", maxSplits: 1)
+                        .first
+                        .map { String($0).lowercased() },
+                    expectedLength: response.expectedContentLength >= 0
+                        ? response.expectedContentLength
+                        : nil
+                )
+            case 401:
+                throw APIError.unauthorized(context)
+            case 403:
+                throw APIError.forbidden(context)
+            case 404:
+                throw APIError.notFound(context)
+            case 429:
+                throw APIError.rateLimited(
+                    retryAfter: parseRetryAfter(response),
+                    context: context
+                )
+            default:
+                throw APIError.server(status: response.statusCode, context: context)
+            }
         }
+    }
+
+    private static let retryableServerStatuses: Set<Int> = [500, 502, 503, 504]
+
+    private func parseRetryAfter(_ response: HTTPURLResponse) -> TimeInterval? {
+        guard let raw = response.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              let seconds = TimeInterval(raw),
+              seconds >= 0
+        else { return nil }
+        return seconds
+    }
+
+    private func errorContext(data: Data, response: HTTPURLResponse) -> APIErrorContext {
+        let envelope = try? decoder.decode(
+            APIErrorEnvelope.self,
+            from: Data(data.prefix(64 * 1_024))
+        )
+        return APIErrorContext(
+            code: sanitize(envelope?.code, maximumLength: 64),
+            requestID: sanitize(
+                response.value(forHTTPHeaderField: "X-Request-ID") ?? envelope?.requestID,
+                maximumLength: 128
+            )
+        )
+    }
+
+    private func sanitize(_ value: String?, maximumLength: Int) -> String? {
+        guard let value else { return nil }
+        let cleaned = value
+            .components(separatedBy: .controlCharacters)
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        return String(cleaned.prefix(maximumLength))
+    }
+}
+
+private struct APIErrorEnvelope: Decodable {
+    let code: String?
+    let requestID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case code
+        case requestID = "request_id"
     }
 }
 

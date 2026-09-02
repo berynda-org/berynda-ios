@@ -1,6 +1,6 @@
 # Berynda iOS implementation plan
 
-Status: anonymous vertical slice and core document renderers implemented; validation and product slices remain
+Status: anonymous vertical slice, core document renderers, macOS build gate, and transport hardening implemented; product slices remain
 Written: 30 August 2026
 Implementation target: this native SwiftUI repository
 Reference architecture: `D:/lexykon/client/ios`
@@ -50,7 +50,7 @@ The Windows workspace cannot compile Xcode targets. The workflow in
 `.github/workflows/ios.yml` is the authoritative clean macOS build gate and
 runs on pushes to `main` and through manual dispatch.
 
-## 0. Current implementation audit (30 August 2026)
+## 0. Current implementation audit (2 September 2026)
 
 This status is based on the code in this repository, not on the original sequencing
 below. Some document work planned for Phase 5 was deliberately pulled forward
@@ -78,16 +78,17 @@ of its later features exists.
 - backend mobile/reader contract suite passing locally (38 tests). Pure Swift
   navigation tests are present but require the macOS build gate to execute.
 
-### Pending slices, in delivery order
+### Delivery slices, in order
 
-1. **Mac build gate:** generate the project, resolve Readium, run package/app/UI
-   tests, fix any Swift or SDK integration failures, and retain the resolved
-   dependency graph. This blocks declaring any iOS phase complete.
-2. **Networking hardening:** bounded and cancellable 429/5xx retry, streaming
-   body limits (in addition to the current declared/received-size gates),
-   structured API error/request-ID decoding, auth headers, reachability,
-   offline states, cache freshness/language isolation, and the full transport
-   test matrix.
+1. **Mac build gate — complete:** Xcode 16.4 resolves Readium, runs the core
+   package tests, generates the project, and builds the unsigned simulator app
+   on every push to `main`.
+2. **Networking hardening — transport portion implemented:** bounded and
+   cancellable 429/5xx retry, streaming body limits, structured safe API error
+   context, stable request IDs across retries, hardened ephemeral URL sessions,
+   reachability, an app-wide offline state, and unit coverage. Auth headers are
+   owned by slice 3; persistent cache freshness/language isolation remains with
+   the offline-data slices.
 3. **Session foundation:** Berynda-specific Keychain token store, atomic rotated
    token writes, coalesced refresh actor, session-expired handling, logout, and
    production-safe logging tests.

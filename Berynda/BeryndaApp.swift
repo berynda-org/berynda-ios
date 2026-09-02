@@ -8,6 +8,7 @@ struct BeryndaApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(environment)
+                .environmentObject(environment.networkMonitor)
                 .tint(BeryndaColor.accent)
                 .onOpenURL { environment.open($0) }
         }

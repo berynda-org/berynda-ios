@@ -1,17 +1,41 @@
 import Foundation
 
+public struct APIErrorContext: Equatable, Sendable {
+    public let code: String?
+    public let requestID: String?
+
+    public init(code: String? = nil, requestID: String? = nil) {
+        self.code = code
+        self.requestID = requestID
+    }
+}
+
 public enum APIError: Error, Equatable, Sendable {
     case invalidConfiguration
     case invalidResponse
-    case unauthorized
-    case forbidden
-    case notFound
-    case rateLimited(retryAfter: TimeInterval?)
-    case server(status: Int, requestID: String?)
+    case unauthorized(APIErrorContext)
+    case forbidden(APIErrorContext)
+    case notFound(APIErrorContext)
+    case rateLimited(retryAfter: TimeInterval?, context: APIErrorContext)
+    case server(status: Int, context: APIErrorContext)
     case decoding
     case transport
     case unsupportedContentType(String?)
     case responseTooLarge
+}
+
+public extension APIError {
+    var context: APIErrorContext? {
+        switch self {
+        case let .unauthorized(context), let .forbidden(context), let .notFound(context):
+            context
+        case let .rateLimited(_, context), let .server(_, context):
+            context
+        case .invalidConfiguration, .invalidResponse, .decoding, .transport,
+             .unsupportedContentType, .responseTooLarge:
+            nil
+        }
+    }
 }
 
 extension APIError: LocalizedError {

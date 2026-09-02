@@ -6,15 +6,18 @@ import Foundation
 final class AppEnvironment: ObservableObject {
     let catalogRepository: any CatalogRepository
     let readerRepository: any ReaderRepository
+    let networkMonitor: NetworkMonitor
     @Published var selectedTab: RootTab = .catalog
     @Published var pendingRoute: AppRoute?
 
     init(
         catalogRepository: any CatalogRepository,
-        readerRepository: any ReaderRepository
+        readerRepository: any ReaderRepository,
+        networkMonitor: NetworkMonitor = NetworkMonitor()
     ) {
         self.catalogRepository = catalogRepository
         self.readerRepository = readerRepository
+        self.networkMonitor = networkMonitor
     }
 
     static func live(bundle: Bundle = .main) -> AppEnvironment {

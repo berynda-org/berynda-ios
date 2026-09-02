@@ -8,9 +8,64 @@ import XCTest
 private struct StubTransport: HTTPTransport {
     let handler: @Sendable (URLRequest) throws -> (Data, HTTPURLResponse)
 
-    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    func data(
+        for request: URLRequest,
+        maximumBytes: Int
+    ) async throws -> (Data, HTTPURLResponse) {
         try handler(request)
     }
+}
+
+private struct StubResponse: Sendable {
+    let status: Int
+    let data: Data
+    let headers: [String: String]
+
+    init(status: Int, data: Data = Data(), headers: [String: String] = [:]) {
+        self.status = status
+        self.data = data
+        self.headers = headers
+    }
+}
+
+private actor SequenceTransport: HTTPTransport {
+    private var responses: [StubResponse]
+    private var requestIDs: [String?] = []
+    private var responseLimits: [Int] = []
+
+    init(_ responses: [StubResponse]) {
+        self.responses = responses
+    }
+
+    func data(
+        for request: URLRequest,
+        maximumBytes: Int
+    ) async throws -> (Data, HTTPURLResponse) {
+        requestIDs.append(request.value(forHTTPHeaderField: "X-Request-ID"))
+        responseLimits.append(maximumBytes)
+        let item = responses.removeFirst()
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: item.status,
+            httpVersion: nil,
+            headerFields: item.headers
+        )!
+        return (item.data, response)
+    }
+
+    func callCount() -> Int { requestIDs.count }
+    func observedRequestIDs() -> [String?] { requestIDs }
+    func observedResponseLimits() -> [Int] { responseLimits }
+}
+
+private actor DelayRecorder {
+    private var values: [TimeInterval] = []
+
+    func sleep(_ seconds: TimeInterval) {
+        values.append(seconds)
+    }
+
+    func recorded() -> [TimeInterval] { values }
 }
 
 final class APIClientTests: XCTestCase {
@@ -46,7 +101,10 @@ final class APIClientTests: XCTestCase {
             let _: PaginatedResponse<WorkSummary> = try await client.request(.works(search: nil, page: 1))
             XCTFail("Expected forbidden")
         } catch {
-            XCTAssertEqual(error as? APIError, .forbidden)
+            XCTAssertEqual(
+                error as? APIError,
+                .forbidden(APIErrorContext())
+            )
         }
     }
 
@@ -119,6 +177,188 @@ final class APIClientTests: XCTestCase {
             XCTFail("Expected size validation failure")
         } catch {
             XCTAssertEqual(error as? APIError, .responseTooLarge)
+        }
+    }
+
+    func testClientRejectsOversizedReceivedResponseFromCustomTransport() async {
+        let transport = StubTransport { request in
+            let response = Self.response(url: request.url!, status: 200)
+            return (Data(repeating: 0x61, count: 5), response)
+        }
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport
+        )
+
+        do {
+            _ = try await client.data(
+                .readerContent(fileID: UUID(), structuredText: false),
+                maximumBytes: 4
+            )
+            XCTFail("Expected size validation failure")
+        } catch {
+            XCTAssertEqual(error as? APIError, .responseTooLarge)
+        }
+    }
+
+    func testRetriesTransientServerFailureThenSucceeds() async throws {
+        let fixtureData = try fixture("works-page")
+        let transport = SequenceTransport([
+            StubResponse(status: 503),
+            StubResponse(
+                status: 200,
+                data: fixtureData,
+                headers: ["Content-Type": "application/json"]
+            ),
+        ])
+        let delays = DelayRecorder()
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            retryPolicy: RetryPolicy(maximumAttempts: 3, baseDelay: 0.25),
+            sleeper: { seconds in await delays.sleep(seconds) },
+            jitter: { 1 }
+        )
+
+        let page: PaginatedResponse<WorkSummary> = try await client.request(
+            .works(search: nil, page: 1)
+        )
+
+        XCTAssertEqual(page.results.count, 1)
+        let callCount = await transport.callCount()
+        let recordedDelays = await delays.recorded()
+        XCTAssertEqual(callCount, 2)
+        XCTAssertEqual(recordedDelays, [0.25])
+        let observedRequestIDs = await transport.observedRequestIDs()
+        let requestIDs = observedRequestIDs.compactMap { $0 }
+        let responseLimits = await transport.observedResponseLimits()
+        XCTAssertEqual(Set(requestIDs).count, 1)
+        XCTAssertEqual(responseLimits, [5 * 1_024 * 1_024, 5 * 1_024 * 1_024])
+    }
+
+    func testRetryAfterIsCapped() async throws {
+        let fixtureData = try fixture("works-page")
+        let transport = SequenceTransport([
+            StubResponse(status: 429, headers: ["Retry-After": "120"]),
+            StubResponse(
+                status: 200,
+                data: fixtureData,
+                headers: ["Content-Type": "application/json"]
+            ),
+        ])
+        let delays = DelayRecorder()
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            retryPolicy: RetryPolicy(maximumRetryAfter: 0.5),
+            sleeper: { seconds in await delays.sleep(seconds) },
+            jitter: { 1 }
+        )
+
+        let _: PaginatedResponse<WorkSummary> = try await client.request(
+            .works(search: nil, page: 1)
+        )
+
+        let recordedDelays = await delays.recorded()
+        XCTAssertEqual(recordedDelays, [0.5])
+    }
+
+    func testCancellationDuringBackoffStopsRetrying() async {
+        let transport = SequenceTransport([
+            StubResponse(status: 503),
+            StubResponse(status: 200),
+        ])
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            sleeper: { _ in throw CancellationError() },
+            jitter: { 1 }
+        )
+
+        do {
+            let _: PaginatedResponse<WorkSummary> = try await client.request(
+                .works(search: nil, page: 1)
+            )
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            let callCount = await transport.callCount()
+            XCTAssertEqual(callCount, 1)
+        } catch {
+            XCTFail("Expected CancellationError, received \(error)")
+        }
+    }
+
+    func testNonTransientForbiddenResponseIsNotRetriedAndCarriesSafeContext() async {
+        let data = Data(
+            #"{"code":"permission_\u0000denied","detail":"private detail","request_id":"body-id"}"#.utf8
+        )
+        let transport = SequenceTransport([
+            StubResponse(
+                status: 403,
+                data: data,
+                headers: ["X-Request-ID": "header-id"]
+            ),
+        ])
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            sleeper: { _ in XCTFail("Forbidden response must not retry") }
+        )
+
+        do {
+            let _: PaginatedResponse<WorkSummary> = try await client.request(
+                .works(search: nil, page: 1)
+            )
+            XCTFail("Expected forbidden")
+        } catch {
+            XCTAssertEqual(
+                error as? APIError,
+                .forbidden(
+                    APIErrorContext(code: "permission_denied", requestID: "header-id")
+                )
+            )
+            let callCount = await transport.callCount()
+            XCTAssertEqual(callCount, 1)
+        }
+    }
+
+    func testExhaustedServerRetriesReturnLastStructuredError() async {
+        let errorBody = Data(#"{"code":"temporarily_unavailable"}"#.utf8)
+        let transport = SequenceTransport([
+            StubResponse(status: 503),
+            StubResponse(status: 503),
+            StubResponse(
+                status: 503,
+                data: errorBody,
+                headers: ["X-Request-ID": "final-request"]
+            ),
+        ])
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            retryPolicy: RetryPolicy(maximumAttempts: 3, baseDelay: 0),
+            sleeper: { _ in },
+            jitter: { 1 }
+        )
+
+        do {
+            let _: PaginatedResponse<WorkSummary> = try await client.request(
+                .works(search: nil, page: 1)
+            )
+            XCTFail("Expected server error")
+        } catch {
+            XCTAssertEqual(
+                error as? APIError,
+                .server(
+                    status: 503,
+                    context: APIErrorContext(
+                        code: "temporarily_unavailable",
+                        requestID: "final-request"
+                    )
+                )
+            )
+            let callCount = await transport.callCount()
+            XCTAssertEqual(callCount, 3)
         }
     }
 

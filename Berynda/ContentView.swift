@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var networkMonitor: NetworkMonitor
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
@@ -13,6 +14,17 @@ struct ContentView: View {
             }
         }
         .background(BeryndaColor.paper.ignoresSafeArea())
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if networkMonitor.status == .offline {
+                Label("Немає з’єднання з мережею", systemImage: "wifi.slash")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .background(BeryndaColor.deepAccent)
+                    .accessibilityIdentifier("network.offline-banner")
+            }
+        }
     }
 }
 

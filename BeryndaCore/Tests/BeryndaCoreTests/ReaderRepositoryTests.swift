@@ -8,7 +8,10 @@ import XCTest
 private struct ReaderStubTransport: HTTPTransport {
     let handler: @Sendable (URLRequest) throws -> (Data, HTTPURLResponse)
 
-    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    func data(
+        for request: URLRequest,
+        maximumBytes: Int
+    ) async throws -> (Data, HTTPURLResponse) {
         try handler(request)
     }
 }

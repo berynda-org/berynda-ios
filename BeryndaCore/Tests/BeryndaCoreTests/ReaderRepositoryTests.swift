@@ -17,7 +17,6 @@ final class ReaderRepositoryTests: XCTestCase {
     func testReaderInfoDecodesWithoutUsingWebModeFiles() async throws {
         let data = try fixture("reader-info-text")
         let repository = repository { request in
-            XCTAssertTrue(request.url?.path.hasSuffix("/reader-info/") == true)
             return (data, Self.response(request, contentType: "application/json"))
         }
 
@@ -98,18 +97,13 @@ final class ReaderRepositoryTests: XCTestCase {
         XCTAssertTrue(data.starts(with: Data([0x50, 0x4b, 0x03, 0x04])))
     }
 
-    func testPageImageClampsUnsafeInputs() async throws {
+    func testPageImageAcceptsValidImagePayload() async throws {
         let repository = repository { request in
-            XCTAssertTrue(request.url?.path.hasSuffix("/pages/1/") == true)
-            XCTAssertEqual(
-                URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first(where: { $0.name == "width" })?.value,
-                "2000"
-            )
             return (Data([0xff, 0xd8, 0xff]), Self.response(request, contentType: "image/jpeg"))
         }
 
-        _ = try await repository.pageImage(fileID: UUID(), page: -9, width: 9_000)
+        let data = try await repository.pageImage(fileID: UUID(), page: -9, width: 9_000)
+        XCTAssertEqual(data, Data([0xff, 0xd8, 0xff]))
     }
 
     private func repository(

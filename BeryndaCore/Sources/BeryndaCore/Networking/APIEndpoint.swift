@@ -38,10 +38,10 @@ public enum APIEndpoint: Sendable, Equatable {
             queryItems.append(.init(name: "width", value: String(min(max(width, 180), 2_000))))
         }
 
-        guard let url = URL(string: path, relativeTo: baseURL),
-              var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else { return nil }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
-        return components.url
+        return components.url?.absoluteURL
     }
 }

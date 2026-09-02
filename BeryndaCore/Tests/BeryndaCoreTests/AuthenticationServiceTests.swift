@@ -106,10 +106,10 @@ final class AuthenticationServiceTests: XCTestCase {
         XCTAssertEqual(rotated, try AuthTokens(access: access2, refresh: refresh2))
 
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.map { $0.url?.path }, [
-            "/api/v1/auth/login/",
-            "/api/v1/auth/token/refresh/",
-            "/api/v1/auth/logout/",
+        XCTAssertEqual(requests.map { $0.url?.absoluteString }, [
+            "https://berynda.org/api/v1/auth/login/",
+            "https://berynda.org/api/v1/auth/token/refresh/",
+            "https://berynda.org/api/v1/auth/logout/",
         ])
         XCTAssertEqual(requests.map(\.method), ["POST", "POST", "POST"])
         XCTAssertTrue(requests.allSatisfy { $0.maximumBytes == 1 * 1_024 * 1_024 })

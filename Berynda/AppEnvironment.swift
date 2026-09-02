@@ -13,11 +13,11 @@ final class AppEnvironment: ObservableObject {
     init(
         catalogRepository: any CatalogRepository,
         readerRepository: any ReaderRepository,
-        networkMonitor: NetworkMonitor = NetworkMonitor()
+        networkMonitor: NetworkMonitor? = nil
     ) {
         self.catalogRepository = catalogRepository
         self.readerRepository = readerRepository
-        self.networkMonitor = networkMonitor
+        self.networkMonitor = networkMonitor ?? NetworkMonitor()
     }
 
     static func live(bundle: Bundle = .main) -> AppEnvironment {

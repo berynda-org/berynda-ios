@@ -7,16 +7,19 @@ final class AppEnvironment: ObservableObject {
     let catalogRepository: any CatalogRepository
     let readerRepository: any ReaderRepository
     let networkMonitor: NetworkMonitor
+    let session: SessionController
     @Published var selectedTab: RootTab = .catalog
     @Published var pendingRoute: AppRoute?
 
     init(
         catalogRepository: any CatalogRepository,
         readerRepository: any ReaderRepository,
+        session: SessionController,
         networkMonitor: NetworkMonitor? = nil
     ) {
         self.catalogRepository = catalogRepository
         self.readerRepository = readerRepository
+        self.session = session
         self.networkMonitor = networkMonitor ?? NetworkMonitor()
     }
 
@@ -27,10 +30,18 @@ final class AppEnvironment: ObservableObject {
         else {
             preconditionFailure("API_BASE_URL must be a fixed /api/v1/ URL supplied by build configuration")
         }
-        let client = BeryndaAPIClient(baseURL: baseURL)
+        let session = SessionController(
+            tokenStore: KeychainTokenStore(),
+            authentication: LiveAuthenticationService(baseURL: baseURL)
+        )
+        let client = BeryndaAPIClient(
+            baseURL: baseURL,
+            authorizationSession: session
+        )
         return AppEnvironment(
             catalogRepository: LiveCatalogRepository(client: client),
-            readerRepository: LiveReaderRepository(client: client)
+            readerRepository: LiveReaderRepository(client: client),
+            session: session
         )
     }
 

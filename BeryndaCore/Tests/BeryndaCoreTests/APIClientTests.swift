@@ -32,6 +32,7 @@ private actor SequenceTransport: HTTPTransport {
     private var responses: [StubResponse]
     private var requestIDs: [String?] = []
     private var responseLimits: [Int] = []
+    private var authorizationHeaders: [String?] = []
 
     init(_ responses: [StubResponse]) {
         self.responses = responses
@@ -43,6 +44,7 @@ private actor SequenceTransport: HTTPTransport {
     ) async throws -> (Data, HTTPURLResponse) {
         requestIDs.append(request.value(forHTTPHeaderField: "X-Request-ID"))
         responseLimits.append(maximumBytes)
+        authorizationHeaders.append(request.value(forHTTPHeaderField: "Authorization"))
         let item = responses.removeFirst()
         let response = HTTPURLResponse(
             url: request.url!,
@@ -56,6 +58,7 @@ private actor SequenceTransport: HTTPTransport {
     func callCount() -> Int { requestIDs.count }
     func observedRequestIDs() -> [String?] { requestIDs }
     func observedResponseLimits() -> [Int] { responseLimits }
+    func observedAuthorizationHeaders() -> [String?] { authorizationHeaders }
 }
 
 private actor DelayRecorder {
@@ -66,6 +69,29 @@ private actor DelayRecorder {
     }
 
     func recorded() -> [TimeInterval] { values }
+}
+
+private actor AuthorizationStub: AuthorizationSession {
+    private let original: String?
+    private let refreshed: String
+    private let refreshError: SessionError?
+    private var refreshCallsValue = 0
+
+    init(original: String?, refreshed: String, refreshError: SessionError? = nil) {
+        self.original = original
+        self.refreshed = refreshed
+        self.refreshError = refreshError
+    }
+
+    func accessToken() -> String? { original }
+
+    func refreshAccessToken(rejectedAccessToken: String) async throws -> String {
+        refreshCallsValue += 1
+        if let refreshError { throw refreshError }
+        return refreshed
+    }
+
+    func refreshCalls() -> Int { refreshCallsValue }
 }
 
 final class APIClientTests: XCTestCase {
@@ -360,6 +386,65 @@ final class APIClientTests: XCTestCase {
             let callCount = await transport.callCount()
             XCTAssertEqual(callCount, 3)
         }
+    }
+
+    func testAuthenticatedRequestRefreshesOnceAndReplaysWithRotatedAccessToken() async throws {
+        let fixtureData = try fixture("works-page")
+        let oldAccess = "header.old-access.signature"
+        let newAccess = "header.new-access.signature"
+        let session = AuthorizationStub(original: oldAccess, refreshed: newAccess)
+        let transport = SequenceTransport([
+            StubResponse(status: 401),
+            StubResponse(
+                status: 200,
+                data: fixtureData,
+                headers: ["Content-Type": "application/json"]
+            ),
+        ])
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            authorizationSession: session
+        )
+
+        let page: PaginatedResponse<WorkSummary> = try await client.request(
+            .works(search: nil, page: 1)
+        )
+
+        let headers = await transport.observedAuthorizationHeaders()
+        let refreshCalls = await session.refreshCalls()
+        XCTAssertEqual(page.results.count, 1)
+        XCTAssertEqual(headers.compactMap { $0 }, ["Bearer \(oldAccess)", "Bearer \(newAccess)"])
+        XCTAssertEqual(refreshCalls, 1)
+    }
+
+    func testFailedSessionRefreshDoesNotReplayUnauthorizedRequest() async {
+        let oldAccess = "header.old-access.signature"
+        let session = AuthorizationStub(
+            original: oldAccess,
+            refreshed: "header.unused.signature",
+            refreshError: .expired
+        )
+        let transport = SequenceTransport([StubResponse(status: 401)])
+        let client = BeryndaAPIClient(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport,
+            authorizationSession: session
+        )
+
+        do {
+            let _: PaginatedResponse<WorkSummary> = try await client.request(
+                .works(search: nil, page: 1)
+            )
+            XCTFail("Expected unauthorized")
+        } catch {
+            XCTAssertEqual(error as? APIError, .unauthorized(APIErrorContext()))
+        }
+
+        let callCount = await transport.callCount()
+        let refreshCalls = await session.refreshCalls()
+        XCTAssertEqual(callCount, 1)
+        XCTAssertEqual(refreshCalls, 1)
     }
 
     private func fixture(_ name: String) throws -> Data {

@@ -1,6 +1,6 @@
 # Berynda iOS implementation plan
 
-Status: anonymous vertical slice, core document renderers, macOS build gate, and transport hardening implemented; product slices remain
+Status: anonymous vertical slice, core document renderers, macOS build gate, transport hardening, and session foundation implemented; product slices remain
 Written: 30 August 2026
 Implementation target: this native SwiftUI repository
 Reference architecture: `D:/lexykon/client/ios`
@@ -89,9 +89,11 @@ of its later features exists.
    reachability, an app-wide offline state, and unit coverage. Auth headers are
    owned by slice 3; persistent cache freshness/language isolation remains with
    the offline-data slices.
-3. **Session foundation:** Berynda-specific Keychain token store, atomic rotated
-   token writes, coalesced refresh actor, session-expired handling, logout, and
-   production-safe logging tests.
+3. **Session foundation — implemented:** Berynda-specific non-synchronizing
+   Keychain storage, atomic token-pair writes, coalesced refresh with stale-token
+   race suppression, one-time 401 replay, explicit expiry, best-effort server
+   revocation on logout, and credential-redaction tests. Authentication screens
+   and profile presentation remain in slice 11.
 4. **Navigation completion:** consume `pendingRoute`, route work links on both
    size classes, open reader deep links at the validated page/location, restore
    iPad selection, and verify the production association file.

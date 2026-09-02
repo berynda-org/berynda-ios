@@ -11,7 +11,10 @@ let package = Package(
         .library(name: "BeryndaCore", targets: ["BeryndaCore"]),
     ],
     targets: [
-        .target(name: "BeryndaCore"),
+        .target(
+            name: "BeryndaCore",
+            linkerSettings: [.linkedFramework("Security")]
+        ),
         .testTarget(
             name: "BeryndaCoreTests",
             dependencies: ["BeryndaCore"],

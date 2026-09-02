@@ -11,6 +11,7 @@ public actor BeryndaAPIClient {
     private let retryPolicy: RetryPolicy
     private let sleeper: @Sendable (TimeInterval) async throws -> Void
     private let jitter: @Sendable () -> Double
+    private let authorizationSession: (any AuthorizationSession)?
 
     public init(
         baseURL: URL,
@@ -20,7 +21,8 @@ public actor BeryndaAPIClient {
         sleeper: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
         },
-        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0.8...1.2) }
+        jitter: @escaping @Sendable () -> Double = { Double.random(in: 0.8...1.2) },
+        authorizationSession: (any AuthorizationSession)? = nil
     ) {
         self.baseURL = baseURL
         self.transport = transport
@@ -28,6 +30,7 @@ public actor BeryndaAPIClient {
         self.retryPolicy = retryPolicy
         self.sleeper = sleeper
         self.jitter = jitter
+        self.authorizationSession = authorizationSession
         self.decoder = JSONDecoder()
     }
 
@@ -69,7 +72,15 @@ public actor BeryndaAPIClient {
         request.setValue(language(), forHTTPHeaderField: "Accept-Language")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-ID")
 
+        var bearerToken = await authorizationSession?.accessToken()
+        if let token = bearerToken, AuthTokens.isValidJWT(token) {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            bearerToken = nil
+        }
+
         var attempt = 1
+        var attemptedSessionRefresh = false
         while true {
             try Task.checkCancellation()
 
@@ -123,6 +134,30 @@ public actor BeryndaAPIClient {
                         : nil
                 )
             case 401:
+                if let authorizationSession,
+                   let rejectedAccessToken = bearerToken,
+                   !attemptedSessionRefresh {
+                    attemptedSessionRefresh = true
+                    do {
+                        let refreshed = try await authorizationSession.refreshAccessToken(
+                            rejectedAccessToken: rejectedAccessToken
+                        )
+                        guard AuthTokens.isValidJWT(refreshed) else {
+                            throw SessionError.invalidToken
+                        }
+                        bearerToken = refreshed
+                        request.setValue(
+                            "Bearer \(refreshed)",
+                            forHTTPHeaderField: "Authorization"
+                        )
+                        attempt = 1
+                        continue
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        throw APIError.unauthorized(context)
+                    }
+                }
                 throw APIError.unauthorized(context)
             case 403:
                 throw APIError.forbidden(context)

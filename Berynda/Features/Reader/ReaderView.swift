@@ -101,7 +101,7 @@ struct ReaderView: View {
                 switch model.content {
                 case let .text(body, isMarkdown):
                     TextReaderView(
-                        body: body,
+                        content: body,
                         isMarkdown: isMarkdown,
                         allowsSelection: model.info?.rights.canCopyText == true,
                         textScale: textScale,
@@ -292,7 +292,7 @@ private struct ReaderContentsSheet: View {
 }
 
 private struct TextReaderView: View {
-    let body: String
+    let content: String
     let isMarkdown: Bool
     let allowsSelection: Bool
     let textScale: CGFloat
@@ -321,10 +321,10 @@ private struct TextReaderView: View {
     private var renderedText: Text {
         guard isMarkdown,
               let attributed = try? AttributedString(
-                markdown: body,
+                markdown: content,
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
               )
-        else { return Text(body) }
+        else { return Text(content) }
         return Text(attributed)
     }
 }

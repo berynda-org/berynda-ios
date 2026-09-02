@@ -1,0 +1,45 @@
+import XCTest
+@testable import BeryndaCore
+
+final class ModelDecodingTests: XCTestCase {
+    func testWorkPageFixtureDecodes() throws {
+        let page: PaginatedResponse<WorkSummary> = try decode("works-page")
+        XCTAssertEqual(page.count, 1)
+        XCTAssertEqual(page.results.first?.title, "Енеїда")
+        XCTAssertEqual(page.results.first?.authors.first?.displayName, "Іван Котляревський")
+        XCTAssertTrue(page.results.first?.hasTextFile == true)
+    }
+
+    func testEditionFixtureUsesCanonicalFileWithoutFormat() throws {
+        let page: PaginatedResponse<EditionSummary> = try decode("editions-page")
+        let edition = try XCTUnwrap(page.results.first)
+        XCTAssertEqual(edition.readableFileID?.uuidString.lowercased(), "44444444-4444-4444-4444-444444444444")
+        XCTAssertTrue(edition.canRead)
+        XCTAssertFalse(edition.canDownload)
+    }
+
+    func testReaderInfoFixtureDecodesMobileRendererContract() throws {
+        let info: ReaderInfo = try decode("reader-info-text")
+        XCTAssertEqual(info.renderingMode, .text)
+        XCTAssertEqual(info.book.title, "Енеїда")
+        XCTAssertTrue(info.rights.canRead)
+        XCTAssertEqual(info.pageLabels.first?.label, "Обкладинка")
+    }
+
+    func testRestrictedClientPDFHintFallsBackToRenderedPage() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "reader-info-text", withExtension: "json"))
+        var json = try String(contentsOf: url, encoding: .utf8)
+        json = json.replacingOccurrences(of: "\"rendering_mode\": \"txt\"", with: "\"rendering_mode\": \"pdf\"")
+        json = json.replacingOccurrences(of: "\"mime_type\": \"text/plain\"", with: "\"mime_type\": \"application/pdf\"")
+        let info = try JSONDecoder().decode(ReaderInfo.self, from: Data(json.utf8))
+
+        XCTAssertEqual(info.pageDelivery, .clientFull)
+        XCTAssertFalse(info.rights.canDownloadFile)
+        XCTAssertEqual(info.resource, .pageImage)
+    }
+
+    private func decode<T: Decodable>(_ name: String) throws -> T {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json"))
+        return try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
+    }
+}

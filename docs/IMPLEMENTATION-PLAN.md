@@ -1,0 +1,732 @@
+# Berynda iOS implementation plan
+
+Status: anonymous vertical slice and core document renderers implemented; validation and product slices remain
+Written: 30 August 2026
+Implementation target: this native SwiftUI repository
+Reference architecture: `D:/lexykon/client/ios`
+Normative visual prototype: `web/public/ios-mockups/index.html`
+Primary backend contract: `api/v1/`
+
+Mobile representation policy: when an edition has several published files,
+the API selects `TXT/Markdown → EPUB → PDF`. DJVU is not returned to mobile
+clients because the apps do not render it. The chosen format remains internal
+and is never presented as a user-facing choice.
+
+Implemented in the first Phase 0 slice:
+
+- native SwiftUI app and `BeryndaCore` package scaffold;
+- iPhone tab shell and iPad split-view shell using Berynda design tokens;
+- live catalog search, work details, edition availability, and reader handoff;
+- typed work/edition API models, transport errors, allow-listed deep links,
+  fixtures, package tests, app smoke tests, and macOS CI;
+- edition `readable_file_id`, `can_read`, `can_download`, and restriction fields;
+- deterministic mobile representation selection without deleting siblings;
+- preservation of the existing web reader's sibling-file switching; and
+- fail-closed reader rights fallback.
+
+Implemented in the first reader slice:
+
+- full-screen reader presentation from an edition row;
+- typed reader metadata, rights, reading-position, page-label, and TOC models;
+- TXT/Markdown rendering with API-controlled text-selection permission;
+- native reflowable and fixed-layout digital-publication rendering through an
+  exact Readium 3.11.0 dependency, with approximate cross-client progress
+  restoration;
+- PDFKit rendering for permitted full and per-page PDFs;
+- server-rendered image fallback whenever file/page download permission is
+  absent, regardless of a more permissive delivery hint;
+- bounded response sizes, content-type validation, page/width clamping,
+  cancellable page turns, page restoration, zoom, and rights-aware sharing;
+- transport/repository fixtures covering structured text, MIME confusion, and
+  unsafe page parameters.
+
+Downloaded publication packages use complete file protection in temporary,
+non-backed-up storage and are deleted when the reader closes. Embedded remote
+subresources are blocked, non-HTTPS external links are rejected, and
+copy/share selection actions follow API rights. DJVU has no renderer and is
+excluded by the mobile file-selection contract.
+
+The Windows workspace cannot compile Xcode targets. The workflow in
+`.github/workflows/ios.yml` is the authoritative clean macOS build gate and
+runs on pushes to `main` and through manual dispatch.
+
+## 0. Current implementation audit (30 August 2026)
+
+This status is based on the code in this repository, not on the original sequencing
+below. Some document work planned for Phase 5 was deliberately pulled forward
+to de-risk the reader. A phase is not considered complete merely because one
+of its later features exists.
+
+### Implemented
+
+- reproducible XcodeGen app definition, local `BeryndaCore` package, app/unit/UI
+  test targets, privacy manifest, third-party notice, and macOS build workflow;
+- fixed development and production API origins, allow-listed app/universal
+  link parser, request IDs, language headers, typed public catalog transport,
+  response-size/MIME checks, and cancellation-aware feature models;
+- iPhone catalog tab flow and basic iPad sidebar shell;
+- anonymous search, work detail, edition availability, and full-screen reader
+  launch without exposing stored file formats;
+- server-controlled TXT/Markdown → EPUB → PDF selection with DJVU excluded;
+- TXT/Markdown, Readium publication, full PDF, per-page PDF, and server-image
+  rendering with deny-by-default rights routing;
+- protected temporary publication storage, blocked embedded remote resources,
+  HTTPS-only external publication links, and rights-aware copy/share behavior;
+- restored PDF page, approximate publication progress restore, PDF page
+  scrubber, custom page labels, page-addressable PDF contents navigation, and
+  Dynamic Type-aware TXT/Markdown size and line-spacing controls; and
+- backend mobile/reader contract suite passing locally (38 tests). Pure Swift
+  navigation tests are present but require the macOS build gate to execute.
+
+### Pending slices, in delivery order
+
+1. **Mac build gate:** generate the project, resolve Readium, run package/app/UI
+   tests, fix any Swift or SDK integration failures, and retain the resolved
+   dependency graph. This blocks declaring any iOS phase complete.
+2. **Networking hardening:** bounded and cancellable 429/5xx retry, streaming
+   body limits (in addition to the current declared/received-size gates),
+   structured API error/request-ID decoding, auth headers, reachability,
+   offline states, cache freshness/language isolation, and the full transport
+   test matrix.
+3. **Session foundation:** Berynda-specific Keychain token store, atomic rotated
+   token writes, coalesced refresh actor, session-expired handling, logout, and
+   production-safe logging tests.
+4. **Navigation completion:** consume `pendingRoute`, route work links on both
+   size classes, open reader deep links at the validated page/location, restore
+   iPad selection, and verify the production association file.
+5. **Design-system completion:** typography/layout tokens, real generated and
+   uploaded covers, reusable loading/empty/error/offline components, dark and
+   increased-contrast review, and visual comparison with the HTML mockups.
+6. **Catalog completion:** pagination, readable/filter controls, featured and
+   saved public collections, recommendations, robust removal/restriction
+   states, request cancellation tests, and recently viewed offline fallback.
+7. **Work and edition completion:** richer bibliography and rights summaries,
+   collection links, stable cover behavior, retry/empty fixtures, and true
+   selected-work columns on iPad rather than the current single detail stack.
+8. **Reader persistence:** authenticated position PUT, quiet-interval save,
+   background/dismiss flush, `recorded: false` and disabled-history behavior,
+   local resume serialization, and process-restart tests.
+9. **Reader performance/resilience:** adjacent-page prefetch capped at two,
+   bounded decoded-image/PDF cache, obsolete-request cancellation, lifecycle
+   recovery, 200-page turn/memory tests, and iPad landscape spread mode.
+10. **Reader feature parity:** rights-aware download/print affordances,
+    persistent appearance preferences, TXT paged mode and anchor navigation,
+    native publication TOC/location navigation, publication appearance, and
+    exact resume interoperability rather than approximate percentage restore.
+11. **Authentication UI:** login, registration, confirmation handoff, password
+    reset, logout, relaunch persistence, and return to the action that prompted
+    authentication while anonymous reading remains available.
+12. **Library:** Continue Reading with empty/disabled-history distinctions,
+    bibliography lists, quick add and list-item reader bookmarks, saved public
+    collections, reconciliation, and duplicate prevention.
+13. **Profile/settings:** account editing, language, appearance, history
+    privacy, local storage summary/eviction, session/account actions, and local
+    resume removal when policy requires it.
+14. **Offline document policy:** background-safe cache, schema/version/locale
+    metadata, corruption recovery, rights revalidation and eviction, plus the
+    v1.0 versus v1.1 decision for permanent downloads.
+15. **Localization/accessibility:** String Catalog for Ukrainian and English,
+    pseudolocalization, VoiceOver order, 44-point targets, Reduce Motion,
+    keyboard/iPad navigation, narrow-screen and accessibility-size audits.
+16. **Automated quality gates:** meaningful URLProtocol integration coverage,
+    stable identifier alignment, full XCUITest journeys, performance/leak
+    checks, staging contracts, and oldest/newest supported OS and device matrix.
+17. **Product configuration:** signed/static minimum/latest build, App Store
+    URL and maintenance state, forced-update/maintenance screens, and safe
+    configuration caching.
+18. **Release/security hardening:** app icon and launch assets, screenshots and
+    metadata, Apple team/signing/TestFlight setup, production universal-link
+    verification, privacy answers, transitive-license audit, archive/dSYM
+    retention, final URL/auth/cache/log/rights review, and remediation of every
+    critical/high or accessibility-blocking finding.
+
+Post-MVP items remain the features in section 13: OCR/full-text scan search,
+text overlays, annotations beyond list items, TTS/autoplay, advanced page-turn
+effects, extensions/widgets/App Clips/Handoff, social login, and any
+user-selectable file representation.
+
+## 1. Objective
+
+Build a native Berynda application for iPhone and iPad that preserves the web
+application's core logic while behaving like an iOS application rather than a
+wrapped website.
+
+The first production release must let a reader:
+
+1. discover and search public works;
+2. open a work and choose a specific edition;
+3. see whether that edition has a readable file, without exposing the file
+   format as a product choice;
+4. read the edition with native page navigation and rights-aware actions;
+5. sign in when a personal feature requires it;
+6. resume reading, manage bibliography lists, and change profile/privacy
+   settings; and
+7. use the same flows on iPad through a real `NavigationSplitView`.
+
+This plan covers the reader-facing app. Uploading, catalog editing, moderation,
+partner administration, and other staff workflows remain web-only.
+
+## 2. Non-negotiable product contracts
+
+### 2.1 Edition and file ownership
+
+- A work may have many editions.
+- An edition may have several stored representations for preservation and the
+  web reader.
+- The catalog and work-detail UI show editions, not file formats.
+- An edition row may say only whether a file is available and whether it can be
+  read or downloaded under the effective rights policy.
+- Mobile automatically chooses TXT/Markdown first, EPUB second, and PDF third.
+- DJVU is unavailable in mobile applications and never selected as their
+  `readable_file_id`.
+- MIME type and rendering format are internal reader implementation details.
+  They may select a renderer but must not appear as ePUB/PDF/TXT choices.
+- The reader opens the preferred mobile file ID returned for the selected
+  edition.
+
+This policy is specific to native mobile clients. The web reader may continue
+to build `mode_files` from sibling representations.
+
+### 2.2 Authority boundaries
+
+- Django remains authoritative for visibility, rights, search results, user
+  identity, reading-history policy, and downloadable content.
+- The iOS app never reconstructs rights decisions locally. It renders the
+  `ReaderRights` response and defaults to deny when a permission is absent.
+- Anonymous browsing and reading remain supported where the API allows them.
+- Authentication is requested only when the user invokes a personal action.
+- Ukrainian is the primary locale and the primary layout test. English is the
+  second locale; additional locales can follow without restructuring views.
+- No production data, sample counts, or invented API behavior may be copied
+  from the HTML prototype.
+
+### 2.3 Platform baseline
+
+- SwiftUI application, iOS/iPadOS 17 or later.
+- Swift concurrency for networking and repositories.
+- No embedded web application and no cross-platform UI layer.
+- `NavigationStack` on iPhone, `NavigationSplitView` on iPad.
+- Portrait and landscape reader support; the general iPhone interface is
+  portrait-first.
+- String Catalog localization, Dynamic Type, VoiceOver, Reduce Motion, and
+  high-contrast behavior are included from the first slice.
+
+## 3. What to reuse from Lexykon
+
+Reuse the proven shape, not Lexykon's dictionary domain code.
+
+### Reuse
+
+- Main app target plus a local Swift package (`BeryndaCore`).
+- An actor-based API client with request IDs, language headers, bounded retry,
+  and coalesced token refresh.
+- An injected `AppEnvironment` that owns app-wide dependencies.
+- Optional authentication and session-expired handling.
+- iPhone `TabView` / iPad `NavigationSplitView` adaptation.
+- Design-system tokens in dedicated files.
+- Accessibility identifiers as a stable UI-test contract.
+- Unit tests in the local package and Maestro/XCUITest smoke flows in CI.
+- Deep-link routing as a pure, unit-tested component.
+- Privacy manifest and explicit production/development configuration.
+
+### Do not copy unchanged
+
+- Lexykon API routes, models, captcha flows, dictionary cache, or removed tools.
+- Lexykon bundle IDs, Keychain service names, associated domains, or signing
+  configuration.
+- Its UserDefaults token fallback in production. Berynda should use an
+  injectable in-memory store for unsigned simulator tests and Keychain for
+  real builds.
+- Entry-centric full-screen presentation. Berynda navigates work → edition →
+  full-screen reader.
+- Any assumption that multiple file formats are choices within one edition.
+
+## 4. Proposed repository structure
+
+```text
+Berynda.xcodeproj  # generated by XcodeGen
+Berynda/
+    BeryndaApp.swift
+    AppEnvironment.swift
+    ContentView.swift
+    Configuration/
+      AppConfiguration.swift
+    DesignSystem/
+      BeryndaColor.swift
+      BeryndaFont.swift
+      BeryndaLayout.swift
+      BeryndaComponents.swift
+    Features/
+      Catalog/
+      WorkDetail/
+      Reader/
+      Library/
+      Profile/
+      Auth/
+    Resources/
+      Assets.xcassets/
+      Localizable.xcstrings
+      PrivacyInfo.xcprivacy
+    Services/
+BeryndaCore/
+    Package.swift
+    Sources/BeryndaCore/
+      API/
+      Auth/
+      Networking/
+      Persistence/
+      Repositories/
+      Routing/
+    Tests/BeryndaCoreTests/
+      Fixtures/
+BeryndaTests/
+BeryndaUITests/
+mobile-tests/flows/
+README.md
+```
+
+`BeryndaCore` must have no SwiftUI dependency. Views depend on repository
+protocols; URLSession, Keychain, and local persistence stay behind concrete
+implementations.
+
+## 5. Application architecture
+
+### 5.1 Navigation
+
+Three stable root destinations:
+
+| Tab | iPhone | iPad |
+| --- | --- | --- |
+| Catalog | `NavigationStack` with discovery/search | Sidebar destination plus catalog and selected-work columns |
+| Library | Continue reading, lists, saved collections | Sidebar destination with two-column library layout |
+| Profile | Account, appearance, privacy, storage | Sidebar destination with grouped settings detail |
+
+Work detail is pushed on iPhone and selected in the iPad detail column. The
+reader is presented full-screen on both devices so navigation chrome cannot
+compete with the document.
+
+Supported deep links:
+
+- `https://berynda.org/works/<slug>`
+- `berynda://works/<slug>`
+- `https://berynda.org/read/<file-id>` with an optional page or location value
+- email-confirmation and password-reset links when the backend link format is
+  finalized
+
+### 5.2 State and dependencies
+
+- `AppEnvironment`: API client, token store, repositories, network monitor,
+  auth state, selected root tab, and pending deep link.
+- Feature view models are `@MainActor` and expose explicit loading, loaded,
+  empty, and error states.
+- API and persistence implementations are actors where mutable shared state is
+  involved.
+- Avoid a global state library. Shared state is limited to authentication,
+  settings, connectivity, and navigation.
+- Cancellation follows view lifetime. Search tasks are cancelled when a new
+  query replaces them.
+
+### 5.3 Local persistence
+
+Use a small repository-backed cache, not a second source of truth.
+
+- Cache recently viewed works, edition summaries, public collections, and the
+  last successful continue-reading response.
+- Store appearance, language, and non-sensitive preferences in
+  `UserDefaults`/`AppStorage`.
+- Store access and refresh tokens only in Keychain.
+- Store downloaded editions only after rights and offline behavior are in
+  scope. Downloads must use file protection and be removed when access is
+  revoked or the user requests deletion.
+- Cache entries carry schema version, fetched-at time, and language. A cached
+  Ukrainian response must not be reused for an English request.
+
+## 6. API contract map
+
+All routes are relative to `/api/v1/`.
+
+| App capability | Endpoint | Authentication | Client behavior |
+| --- | --- | --- | --- |
+| Health/offline banner | `GET health/` | No | Poll only while offline; do not use as a data-health guarantee |
+| Catalog list/search | `GET works/` | No | Debounced query, pagination, readable-only filter when requested |
+| Cross-entity search | `GET search/cross/` | No | Optional people/publishers results; MVP work search may stay on `works/` |
+| Work detail | `GET works/<slug-or-id>/` | No | Decode work metadata and rights summary |
+| Work editions | `GET works/<work-id>/editions/` | No | Render edition rows; requires Phase 0 readable-file reference |
+| Edition detail | `GET editions/<id>/` | No | Bibliographic metadata, no format choice |
+| Public collections | `GET collections/` and `GET collections/<slug>/` | No | Discovery and saved-collection source |
+| Reader bootstrap | `GET files/<file-id>/reader-info/` | Conditional | Select renderer internally, apply server-provided rights |
+| Reader content | `GET files/<file-id>/reader-content/` | Conditional | Full-source delivery only when policy allows it |
+| Page image/PDF | `GET files/<file-id>/pages/<n>/` or `<n>.pdf` | Conditional | On-demand page cache with prefetch window |
+| Text layer | `GET files/<file-id>/pages/<n>/text-layer/` | Conditional | Post-MVP selection/search unless already cheap to support |
+| Table of contents | `GET editions/<edition-id>/toc/` | No/conditional | Hierarchical navigation |
+| Reading position | `GET/PUT files/<file-id>/reading-position/` | PUT requires login | Debounce saves; respect `recorded: false` |
+| Continue reading | `GET auth/me/reading/` | Yes | Distinguish empty history from disabled history |
+| Lists | `GET/POST lists/` | Yes | Personal library and bibliography lists |
+| List items/bookmarks | `POST lists/<id>/items/` | Yes | Reader bookmarks use bibliography items; do not call removed bookmark endpoints |
+| Saved collections | `GET auth/me/saved-collections/` | Yes | Display after login |
+| Login/register | `POST auth/login/`, `POST auth/register/` | No | Store tokens in Keychain; registration may require email confirmation |
+| Refresh/logout | `POST auth/token/refresh/`, `POST auth/logout/` | Refresh token / access token | Send refresh in JSON for native flow; store rotated pair atomically |
+| Profile/privacy | `GET/PATCH auth/me/` | Yes | Includes `reading_history_enabled` privacy setting |
+
+### Required Phase 0 API additions/changes
+
+1. Add an edition-level mobile summary that provides:
+   - `id`, display title, year, language, publisher, page count;
+   - `readable_file_id` or `null`;
+   - `can_read`, `can_download`, and an optional restriction reason; and
+   - no user-facing format label.
+2. Select the mobile file deterministically: TXT/Markdown, then EPUB, then PDF.
+   Return no mobile-readable file when an edition contains only DJVU.
+3. Keep sibling-file switching as a web-reader behavior. Native clients must
+   ignore `mode_files` and open only the edition's preferred mobile file.
+4. Add contract fixtures for work list, work detail, edition summary,
+   reader-info for every delivery strategy, auth rotation, continue reading,
+   and API errors.
+5. Add an app-configuration endpoint or static signed configuration containing
+   minimum supported build, latest build, App Store URL, and maintenance state.
+
+## 7. Reader design
+
+The reader is the highest-risk feature and must use the delivery strategy sent
+by the API rather than guessing from file extensions.
+
+### 7.1 Internal renderer routing
+
+| Server response | Native implementation |
+| --- | --- |
+| `client_full` PDF | Download through an authorized URLSession task, open with PDFKit, discard or retain according to rights |
+| `client_per_page` | Fetch a small page PDF on demand, render through PDFKit, cache a bounded page window |
+| `server_pages` | Display server-rendered page images with native zoom/pan and bounded prefetch |
+| EPUB | Use one audited EPUB renderer, isolated behind `DocumentRenderer`; do not expose the word EPUB in catalog UI |
+| TXT/Markdown | Native attributed-text renderer with paged and scrolling modes |
+| DJVU | Unsupported on mobile; the edition summary must not select it |
+
+### 7.2 Reader behavior
+
+- Single-page portrait view first; optional spread view on iPad/landscape.
+- Page slider, previous/next, TOC, appearance, page labels, and resume position.
+- Prefetch at most the adjacent two pages and cancel obsolete requests.
+- Save authenticated reading position after a quiet interval, on background,
+  and on reader dismissal. Never write history when the API returns
+  `recorded: false`.
+- Show download/share/copy/print only when the corresponding `rights` flag is
+  true. Disabled actions explain `restriction_reason`.
+- Reader memory is tested with large documents and repeated page turns; no
+  unbounded `UIImage`, `PDFPage`, or response-data retention.
+- App lifecycle transitions must not leave a partially written file presented
+  as a completed offline download.
+
+### 7.3 Deferred reader features
+
+OCR search, selectable text overlays, annotations, TTS, autoplay, complex page
+turn animation, and permanent offline downloads are post-MVP unless the base
+reader is already stable and the release budget remains.
+
+## 8. Security and privacy requirements
+
+- ATS requires HTTPS for production. Local HTTP is a debug-only configuration.
+- `API_BASE_URL` is build configuration, not a user-editable arbitrary host.
+- Access and rotated refresh tokens use a Berynda-specific Keychain service
+  with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` or stricter.
+- Token writes are atomic from the app's perspective: never persist a new
+  access token with an old refresh token after rotation.
+- A refresh actor coalesces concurrent 401 responses into one refresh request.
+- A 401 refresh failure clears the session; network and 5xx errors do not.
+- Disable ambient cookie storage if the native body-token flow is used.
+- Never log credentials, authorization headers, full private URLs, emails,
+  document contents, or raw API bodies in production.
+- Decode API errors into stable codes plus a request ID; user-visible text is
+  localized and contains no server internals.
+- All local download filenames are generated UUIDs. Server filenames are
+  metadata, never paths.
+- Validate MIME response, HTTP status, expected length where available, and
+  safe storage destination before opening content.
+- Rights are rechecked before a persisted download is opened after a material
+  cache age.
+- Reading history is opt-in according to the existing account default and can
+  be disabled from Profile. Disabling it must remove or suppress local resume
+  state as specified by the backend policy.
+- Ship `PrivacyInfo.xcprivacy`; declare only APIs actually used.
+- No analytics or advertising SDK in MVP. Add telemetry only after a separate
+  data-minimization and consent decision.
+- Universal links accept only allow-listed hosts and validated UUID/slug/page
+  parameters.
+
+Certificate pinning is not part of MVP because it adds a production outage
+risk during certificate rotation. Reconsider only with a documented rotation
+and recovery process.
+
+## 9. Design implementation
+
+The HTML prototype is the visual baseline, translated into native components.
+
+Core tokens:
+
+- paper background `#F4F3ED`;
+- raised surface `#FFFDF8`;
+- ink `#251F1D`;
+- muted ink `#6B6660`;
+- border `#D9D8CD`;
+- oxblood accent `#95271D`;
+- deep accent `#60241E`;
+- dark background `#171312`;
+- dark accent `#E77B49`.
+
+Use semantic colors and asset-catalog variants rather than hardcoded values in
+feature views. Large editorial titles use the approved serif; controls and
+metadata use the system font unless a licensed bundled family is selected.
+
+Every non-trivial control receives an accessibility identifier. Every screen
+must pass:
+
+- Dynamic Type through accessibility sizes;
+- VoiceOver order and meaningful labels;
+- 44-point minimum touch targets;
+- light/dark and increased-contrast review;
+- Reduce Motion behavior;
+- Ukrainian long-label and narrow-screen review; and
+- keyboard navigation on iPad where applicable.
+
+## 10. Delivery phases
+
+Each phase ends with working software and an explicit gate. Do not start the
+next phase while the current gate is red.
+
+### Phase 0 — Contract and project foundation (1 week)
+
+Backend:
+
+- Implement and test the mobile representation priority without deleting or
+  reassigning existing files.
+- Add the edition mobile summary/readable file reference.
+- Preserve sibling-file behavior for the web while keeping it outside the
+  native mobile contract.
+- Freeze representative JSON fixtures and regenerate the OpenAPI schema.
+- Add API tests proving anonymous visibility, authenticated rights, the unique
+  edition-file invariant, and safe behavior when no file exists.
+
+iOS foundation:
+
+- Generate `Berynda.xcodeproj`, app target, `BeryndaCore`, test targets, and
+  development/production configurations.
+- Set the final bundle ID, deployment target, team placeholder, URL scheme,
+  and associated-domain placeholders.
+- Add CI on a macOS runner immediately; the Windows workspace cannot validate
+  Xcode builds.
+
+Gate:
+
+- Backend contract tests pass.
+- Mobile selection fixtures prove TXT/Markdown → EPUB → PDF and exclude DJVU.
+- Empty SwiftUI shell builds and tests on a clean macOS CI runner.
+
+### Phase 1 — Design system, networking, and app shell (1 week)
+
+- Port Berynda tokens, typography, cover component, buttons, panels, loading,
+  empty, error, and offline states.
+- Implement iPhone tabs and iPad split navigation.
+- Implement `BeryndaAPIClient` actor, typed requests, error mapping, language
+  header, request ID, bounded 429/5xx retry, and cancellation.
+- Implement network reachability and cached-content banner.
+- Implement Keychain token store and refresh actor, but keep login UI behind a
+  development route until Phase 4.
+- Add deep-link router unit tests.
+
+Gate:
+
+- Shell matches the HTML prototype at representative iPhone and iPad sizes.
+- API client fixture tests cover success, malformed JSON, 401 refresh,
+  concurrent refresh, 403, 404, 429, 5xx, cancellation, and offline errors.
+- No secrets or tokens appear in logs.
+
+### Phase 2 — Catalog, search, work, and editions (1–2 weeks)
+
+- Catalog discovery with featured collections and recommended readable works.
+- Debounced work search, pagination, filters, empty/error/retry states, and
+  request cancellation.
+- Work detail with authors, metadata, rights summary, and edition list.
+- Edition rows show year/language/publisher plus availability; no file format.
+- Reader opens only from the edition's `readable_file_id`.
+- Generated and uploaded covers share one stable native component.
+- Work and collection deep links.
+
+Gate:
+
+- Anonymous launch → search → work → edition works on iPhone and iPad.
+- A work with no editions, an edition with no file, a restricted file, and a
+  removed work all degrade safely.
+- Search and detail fixtures match the current API schema.
+
+### Phase 3 — Core reader (2 weeks)
+
+- Reader bootstrap and rights handling.
+- PDF client-full, per-page, and server-page strategies.
+- Native zoom/pan, page navigation, page labels, TOC, loading and retry.
+- Reader position restore for authenticated users.
+- Debounced position save with privacy-history handling.
+- iPad landscape spread after single-page behavior is stable.
+- Internal renderer abstraction ready for EPUB/text without exposing formats.
+
+Gate:
+
+- The same edition opens correctly under all three PDF delivery strategies.
+- Resume survives app background/foreground and process restart.
+- Rights-disabled actions cannot be invoked through UI or deep links.
+- Memory and scrolling remain stable during a 200-page automated turn test.
+- Reader works with VoiceOver and Reduce Motion.
+
+### Phase 4 — Authentication, Library, and Profile (1–2 weeks)
+
+- Optional login, registration, email-confirmation handoff, password reset,
+  logout, and session-expired state.
+- Continue Reading with disabled-history and empty-history distinctions.
+- Bibliography lists, quick add, and reader-position bookmarks through list
+  items.
+- Saved public collections.
+- Profile editing, language, appearance, reading-history privacy, local storage
+  summary, and account actions.
+- Login prompts return the user to the action that required authentication.
+
+Gate:
+
+- Anonymous reading remains functional.
+- Login, refresh rotation, logout, and relaunch persistence pass.
+- Turning reading history off suppresses remote and local resume behavior.
+- Library changes reconcile after offline/retry without duplicate list items.
+
+### Phase 5 — Additional documents and resilience (1–2 weeks)
+
+- EPUB and TXT/Markdown renderers behind the common reader protocol.
+- Background-safe document cache and bounded page prefetch.
+- Offline catalog fallback for recently viewed material.
+- Decide whether rights-compliant permanent downloads belong in v1.0 or v1.1.
+- Polish split-view selection restoration and multitasking widths.
+- Complete Ukrainian and English strings; pseudolocalization pass.
+
+Gate:
+
+- Renderer selection is invisible to catalog/work UI.
+- Airplane-mode behavior is deterministic and explains what is cached.
+- Storage eviction does not delete an open document or leave corrupt entries.
+- No horizontal clipping in either supported locale.
+
+### Phase 6 — Release hardening (1 week)
+
+- App icon, launch screen, screenshots, description, support and privacy URLs.
+- Privacy manifest review and App Store privacy answers.
+- Unit, integration, UI, accessibility, performance, and memory gates in CI.
+- TestFlight internal group, staged external group, crash-symbol upload, and
+  release checklist.
+- Minimum/latest-build configuration and forced-update screen.
+- Universal-link association and production deep-link verification.
+- Security review of auth storage, URL handling, document caching, logs, and
+  rights gates.
+
+Gate:
+
+- Clean archive from CI with production configuration and no debug hosts.
+- All critical Maestro/XCUITest journeys pass on the oldest and newest
+  supported iOS versions, iPhone, and iPad.
+- No unresolved critical/high security findings or accessibility blockers.
+- Product owner signs off against the interactive HTML prototype.
+
+## 11. Testing strategy
+
+### Unit and contract tests
+
+- JSON decoding for every API model, with missing optional fields and unknown
+  enum values.
+- API client retry, cancellation, auth refresh, and error-code mapping.
+- Deep-link parsing and rejection of malicious or malformed routes.
+- Reader navigation math, page-label mapping, prefetch bounds, and resume
+  serialization.
+- Repository cache expiry, language isolation, migrations, and corruption
+  recovery.
+- Rights action visibility and deny-by-default behavior.
+
+### Integration tests
+
+- URLProtocol-backed API flows in `BeryndaCoreTests`.
+- Backend mobile-contract tests using the same fixture scenarios.
+- One staging suite for login/refresh, work editions, reader-info, reading
+  position, and bibliography list operations.
+
+### UI smoke flows
+
+Stable identifiers should cover at least:
+
+- `tab_catalog`, `tab_library`, `tab_profile`;
+- `catalog_search_field`, `catalog_result_primary`;
+- `work_edition_<id>`, `edition_read_button`;
+- `reader_previous`, `reader_next`, `reader_page_slider`, `reader_toc`;
+- `library_continue_primary`, `library_list_<id>`;
+- `profile_login_button`, auth fields, privacy-history toggle, and logout.
+
+Required journeys:
+
+1. launch anonymously and browse catalog;
+2. search Ukrainian text and open an edition;
+3. read, turn pages, close, and resume;
+4. handle an edition without a file;
+5. handle a rights-restricted file;
+6. login and survive token rotation;
+7. continue reading and add a reader bookmark to a list;
+8. disable reading history;
+9. switch theme and language; and
+10. repeat catalog/work navigation on iPad split view.
+
+## 12. CI and distribution
+
+CI begins in Phase 0, not at release time.
+
+- Pull requests run `swift test`, simulator build, app unit
+  tests, and the fast UI smoke suite on macOS.
+- Nightly builds run the full Maestro/XCUITest matrix and staging contract
+  tests.
+- Archive workflow uses manual signing credentials stored in repository
+  secrets and never writes certificates/profiles into the checkout.
+- Use TestFlight for product acceptance. Firebase App Distribution can be
+  added only if the team already relies on it; it is not required for MVP.
+- Release artifacts retain dSYMs and a mapping from build number to commit.
+
+## 13. Scope explicitly deferred from v1.0
+
+- Uploading or editing works/editions/files.
+- Moderation, partner, author-claim, and administration surfaces.
+- Full catalog mirroring for offline use.
+- Annotations independent of bibliography list bookmarks.
+- OCR full-text search inside scans.
+- TTS, autoplay, widgets, share extensions, App Clips, and Handoff.
+- Social login unless the product separately approves and configures it.
+- User-selectable file format. The edition remains the selectable product
+  object even if internal storage capabilities change later.
+
+## 14. Schedule and staffing assumption
+
+For one experienced iOS engineer with backend help available for Phase 0:
+
+- reader-capable anonymous MVP: approximately 5–6 weeks;
+- authenticated library and additional renderer support: another 2–3 weeks;
+- release hardening: approximately 1 week.
+
+Expected total: 8–10 weeks. A second engineer helps most by owning the Phase 0
+API contract and reader fixtures, not by building a parallel UI architecture.
+
+The estimate assumes access to a macOS CI runner and Apple signing assets in
+the first week. Without those, work may continue locally but no phase can be
+declared complete.
+
+## 15. Definition of done for v1.0
+
+The iOS app is complete when:
+
+- catalog, search, work detail, edition selection, reader, Library, Profile,
+  and optional auth work on supported iPhone and iPad devices;
+- the edition-file invariant is enforced and format is absent from product UI;
+- reader rights, reading-history privacy, and token rotation are correctly
+  enforced;
+- Ukrainian and English layouts pass accessibility and localization review;
+- offline and server-error states are explicit and recoverable;
+- all required CI and UI flows pass from a clean checkout;
+- a production archive is accepted by TestFlight; and
+- the product owner approves visual parity with the HTML prototype.

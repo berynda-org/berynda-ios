@@ -1,0 +1,211 @@
+import Foundation
+
+public enum ReaderFormat: String, Codable, Sendable {
+    case text = "txt"
+    case markdown = "md"
+    case epub
+    case pdf
+    case djvu
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self).lowercased()
+        guard let format = Self(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(
+                in: try decoder.singleValueContainer(),
+                debugDescription: "Unsupported reader format"
+            )
+        }
+        self = format
+    }
+}
+
+public enum PageDelivery: String, Codable, Sendable {
+    case clientFull = "client_full"
+    case clientPerPage = "client_per_page"
+    case serverPages = "server_pages"
+}
+
+public struct ReaderBook: Codable, Sendable, Equatable {
+    public let title: String
+    public let subtitle: String?
+    public let authors: [String]
+    public let editionYear: Int?
+    public let publisher: String?
+    public let publicationPlace: String?
+    public let coverImageURL: URL?
+
+    enum CodingKeys: String, CodingKey {
+        case title, subtitle, authors, publisher
+        case editionYear = "edition_year"
+        case publicationPlace = "publication_place"
+        case coverImageURL = "cover_image_url"
+    }
+}
+
+public struct ReaderRights: Codable, Sendable, Equatable {
+    public let canRead: Bool
+    public let canDownloadFile: Bool
+    public let canDownloadPage: Bool
+    public let canCopyText: Bool
+    public let canPrint: Bool
+    public let canShare: Bool
+    public let restrictionReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case canRead = "can_read"
+        case canDownloadFile = "can_download_file"
+        case canDownloadPage = "can_download_page"
+        case canCopyText = "can_copy_text"
+        case canPrint = "can_print"
+        case canShare = "can_share"
+        case restrictionReason = "restriction_reason"
+    }
+}
+
+public struct ReadingPosition: Codable, Sendable, Equatable {
+    public let positionType: String
+    public let positionValue: String
+    public let progressPercent: Int?
+    public let totalPages: Int?
+    public let lastReadAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case positionType = "position_type"
+        case positionValue = "position_value"
+        case progressPercent = "progress_percent"
+        case totalPages = "total_pages"
+        case lastReadAt = "last_read_at"
+    }
+}
+
+public struct ReaderTOCEntry: Codable, Sendable, Identifiable, Equatable {
+    public let id: UUID
+    public let ordinal: Int
+    public let title: String
+    public let pageNumber: Int?
+    public let anchor: String?
+    public let level: Int
+    public let workID: UUID?
+    public let children: [ReaderTOCEntry]
+
+    public init(
+        id: UUID,
+        ordinal: Int,
+        title: String,
+        pageNumber: Int?,
+        anchor: String?,
+        level: Int,
+        workID: UUID?,
+        children: [ReaderTOCEntry]
+    ) {
+        self.id = id
+        self.ordinal = ordinal
+        self.title = title
+        self.pageNumber = pageNumber
+        self.anchor = anchor
+        self.level = level
+        self.workID = workID
+        self.children = children
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, ordinal, title, anchor, level, children
+        case pageNumber = "page_number"
+        case workID = "work_id"
+    }
+}
+
+public struct ReaderPageLabel: Codable, Sendable, Equatable {
+    public let page: Int
+    public let label: String
+    public let source: String
+
+    public init(page: Int, label: String, source: String) {
+        self.page = page
+        self.label = label
+        self.source = source
+    }
+}
+
+public struct ReaderInfo: Codable, Sendable, Equatable {
+    public let fileID: UUID
+    public let editionID: UUID
+    public let seriesID: UUID?
+    public let workID: UUID
+    public let book: ReaderBook
+    public let mimeType: String
+    public let fileSizeBytes: Int?
+    public let renderingMode: ReaderFormat
+    public let pageDelivery: PageDelivery
+    public let pagesExtracted: Bool
+    public let splitPending: Bool
+    public let splitFailed: Bool
+    public let totalPages: Int?
+    public let hasTOC: Bool
+    public let toc: [ReaderTOCEntry]
+    public let readingPosition: ReadingPosition?
+    public let rights: ReaderRights
+    public let pageLabels: [ReaderPageLabel]
+
+    enum CodingKeys: String, CodingKey {
+        case book, toc, rights
+        case fileID = "file_id"
+        case editionID = "edition_id"
+        case seriesID = "series_id"
+        case workID = "work_id"
+        case mimeType = "mime_type"
+        case fileSizeBytes = "file_size_bytes"
+        case renderingMode = "rendering_mode"
+        case pageDelivery = "page_delivery"
+        case pagesExtracted = "pages_extracted"
+        case splitPending = "split_pending"
+        case splitFailed = "split_failed"
+        case totalPages = "total_pages"
+        case hasTOC = "has_toc"
+        case readingPosition = "reading_position"
+        case pageLabels = "page_labels"
+    }
+}
+
+public enum ReaderResource: Sendable, Equatable {
+    case structuredText(isMarkdown: Bool)
+    case epub
+    case fullPDF
+    case pagePDF
+    case pageImage
+    case unsupported
+}
+
+public extension ReaderInfo {
+    var resource: ReaderResource {
+        switch renderingMode {
+        case .text:
+            return .structuredText(isMarkdown: false)
+        case .markdown:
+            return .structuredText(isMarkdown: true)
+        case .epub:
+            return .epub
+        case .djvu:
+            return .unsupported
+        case .pdf:
+            switch pageDelivery {
+            case .clientFull:
+                return rights.canDownloadFile ? .fullPDF : .pageImage
+            case .clientPerPage:
+                return rights.canDownloadPage ? .pagePDF : .pageImage
+            case .serverPages:
+                return .pageImage
+            }
+        }
+    }
+}
+
+public struct TextReaderContent: Codable, Sendable, Equatable {
+    public let body: String
+    public let pageOffsets: [Int]
+
+    enum CodingKeys: String, CodingKey {
+        case body
+        case pageOffsets = "page_offsets"
+    }
+}

@@ -1,0 +1,109 @@
+import Foundation
+
+public protocol ReaderRepository: Sendable {
+    func info(fileID: UUID) async throws -> ReaderInfo
+    func text(fileID: UUID) async throws -> TextReaderContent
+    func epubDocument(fileID: UUID) async throws -> Data
+    func fullDocument(fileID: UUID) async throws -> Data
+    func pagePDF(fileID: UUID, page: Int) async throws -> Data
+    func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data
+}
+
+public actor LiveReaderRepository: ReaderRepository {
+    private let client: BeryndaAPIClient
+    private let decoder = JSONDecoder()
+
+    public init(client: BeryndaAPIClient) {
+        self.client = client
+    }
+
+    public func info(fileID: UUID) async throws -> ReaderInfo {
+        try await client.request(.readerInfo(fileID: fileID))
+    }
+
+    public func text(fileID: UUID) async throws -> TextReaderContent {
+        let payload = try await client.data(
+            .readerContent(fileID: fileID, structuredText: true),
+            accept: "application/json",
+            maximumBytes: 20 * 1_024 * 1_024
+        )
+        try validate(payload, accepted: ["application/json"], maxBytes: 20 * 1_024 * 1_024)
+        do {
+            return try decoder.decode(TextReaderContent.self, from: payload.data)
+        } catch {
+            throw APIError.decoding
+        }
+    }
+
+    public func fullDocument(fileID: UUID) async throws -> Data {
+        let payload = try await client.data(
+            .readerContent(fileID: fileID, structuredText: false),
+            accept: "application/pdf",
+            maximumBytes: 15 * 1_024 * 1_024
+        )
+        try validate(payload, accepted: ["application/pdf"], maxBytes: 15 * 1_024 * 1_024)
+        guard payload.data.starts(with: Data("%PDF-".utf8)) else {
+            throw APIError.invalidResponse
+        }
+        return payload.data
+    }
+
+    public func epubDocument(fileID: UUID) async throws -> Data {
+        let payload = try await client.data(
+            .readerContent(fileID: fileID, structuredText: false),
+            accept: "application/epub+zip",
+            maximumBytes: 100 * 1_024 * 1_024
+        )
+        try validate(
+            payload,
+            accepted: ["application/epub+zip"],
+            maxBytes: 100 * 1_024 * 1_024
+        )
+        guard payload.data.starts(with: Data([0x50, 0x4b, 0x03, 0x04])) else {
+            throw APIError.invalidResponse
+        }
+        return payload.data
+    }
+
+    public func pagePDF(fileID: UUID, page: Int) async throws -> Data {
+        let payload = try await client.data(
+            .pagePDF(fileID: fileID, page: page),
+            accept: "application/pdf",
+            maximumBytes: 10 * 1_024 * 1_024
+        )
+        try validate(payload, accepted: ["application/pdf"], maxBytes: 10 * 1_024 * 1_024)
+        guard payload.data.starts(with: Data("%PDF-".utf8)) else {
+            throw APIError.invalidResponse
+        }
+        return payload.data
+    }
+
+    public func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data {
+        let payload = try await client.data(
+            .pageImage(fileID: fileID, page: page, width: width),
+            accept: "image/*",
+            maximumBytes: 10 * 1_024 * 1_024
+        )
+        guard let contentType = payload.contentType, contentType.hasPrefix("image/") else {
+            throw APIError.unsupportedContentType(payload.contentType)
+        }
+        try validateSize(payload, maxBytes: 10 * 1_024 * 1_024)
+        return payload.data
+    }
+
+    private func validate(_ payload: HTTPPayload, accepted: Set<String>, maxBytes: Int) throws {
+        guard let contentType = payload.contentType, accepted.contains(contentType) else {
+            throw APIError.unsupportedContentType(payload.contentType)
+        }
+        try validateSize(payload, maxBytes: maxBytes)
+    }
+
+    private func validateSize(_ payload: HTTPPayload, maxBytes: Int) throws {
+        if let expectedLength = payload.expectedLength, expectedLength > maxBytes {
+            throw APIError.responseTooLarge
+        }
+        guard payload.data.count <= maxBytes else {
+            throw APIError.responseTooLarge
+        }
+    }
+}

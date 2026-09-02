@@ -1,0 +1,21 @@
+{
+  "count": 1,
+  "next": null,
+  "previous": null,
+  "results": [
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "work": "11111111-1111-1111-1111-111111111111",
+      "display_title": "Енеїда",
+      "language": "uk",
+      "year": 1922,
+      "publisher_name": "Сяйво",
+      "publication_place": "Київ",
+      "page_count": 240,
+      "readable_file_id": "44444444-4444-4444-4444-444444444444",
+      "can_read": true,
+      "can_download": false,
+      "restriction_reason": "Завантаження та експорт тимчасово недоступні."
+    }
+  ]
+}

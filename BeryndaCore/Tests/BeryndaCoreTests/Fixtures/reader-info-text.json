@@ -1,0 +1,75 @@
+{
+  "file_id": "44444444-4444-4444-4444-444444444444",
+  "edition_id": "33333333-3333-3333-3333-333333333333",
+  "series_id": null,
+  "work_id": "11111111-1111-1111-1111-111111111111",
+  "book": {
+    "title": "Енеїда",
+    "subtitle": null,
+    "authors": ["Іван Котляревський"],
+    "edition_year": 1922,
+    "publisher": "Друкар",
+    "publication_place": "Київ",
+    "cover_image_url": null,
+    "cover_tone": "clay",
+    "cover_variant": "frame",
+    "cover_glyph": "Е"
+  },
+  "mime_type": "text/plain",
+  "file_size_bytes": 42,
+  "rendering_mode": "txt",
+  "render_mode": "txt",
+  "available_modes": ["text", "scan"],
+  "default_mode": "text",
+  "mode_files": {
+    "text": "44444444-4444-4444-4444-444444444444",
+    "scan": "55555555-5555-5555-5555-555555555555"
+  },
+  "page_delivery": "client_full",
+  "pages_extracted": false,
+  "split_pending": false,
+  "split_failed": false,
+  "total_pages": null,
+  "access_mode": "read_only",
+  "download_allowed": false,
+  "has_text_layer": false,
+  "text_layer": false,
+  "has_toc": true,
+  "toc": [
+    {
+      "id": "77777777-7777-7777-7777-777777777777",
+      "ordinal": 1,
+      "title": "Частина перша",
+      "page_number": 1,
+      "anchor": null,
+      "level": 1,
+      "work_id": "11111111-1111-1111-1111-111111111111",
+      "children": []
+    }
+  ],
+  "toc_ready": true,
+  "toc_count": 1,
+  "translation_context": null,
+  "reading_position": {
+    "position_type": "char",
+    "position_value": "120",
+    "progress_percent": 7,
+    "total_pages": null,
+    "last_read_at": "2026-08-30T12:00:00+00:00"
+  },
+  "djvu_pdf_available": false,
+  "scan_two_up": false,
+  "scan_cover_alone": false,
+  "rights": {
+    "can_read": true,
+    "can_download_file": false,
+    "can_download_page": false,
+    "can_copy_text": true,
+    "can_print": false,
+    "can_share": true,
+    "restriction_reason": null
+  },
+  "page_labels": [
+    {"page": 1, "label": "Обкладинка", "source": "manual"}
+  ]
+}

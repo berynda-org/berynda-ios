@@ -40,12 +40,21 @@ targets:
     info:
       path: Berynda/Info.plist
       properties:
+        CFBundleDevelopmentRegion: uk
         CFBundleDisplayName: Берында
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleInfoDictionaryVersion: "6.0"
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleURLTypes:
           - CFBundleURLName: org.berynda.ios
             CFBundleURLSchemes:
               - berynda
         LSApplicationCategoryType: public.app-category.books
+        ITSAppUsesNonExemptEncryption: false
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         UIApplicationSceneManifest:

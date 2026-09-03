@@ -5,6 +5,7 @@ import SwiftUI
 struct BeryndaApp: App {
     @StateObject private var environment: AppEnvironment
 
+    @MainActor
     init() {
         #if DEBUG
         let environment = ProcessInfo.processInfo.arguments.contains("--ui-testing")

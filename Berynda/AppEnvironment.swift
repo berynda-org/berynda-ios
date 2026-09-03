@@ -27,7 +27,7 @@ final class AppEnvironment: ObservableObject {
 
     static func live(baseURL: URL = AppConfiguration.apiBaseURL) -> AppEnvironment {
         precondition(
-            baseURL.scheme == "https" && baseURL.path.hasSuffix("/api/v1/"),
+            baseURL.scheme == "https" && baseURL.absoluteString.hasSuffix("/api/v1/"),
             "The production API URL must use HTTPS and end in /api/v1/."
         )
         let session = SessionController(

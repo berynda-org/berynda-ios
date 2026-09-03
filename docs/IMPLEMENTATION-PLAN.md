@@ -140,8 +140,10 @@ duplicate-aware quick add and reader bookmarks, saved/featured collections,
 catalog readability/language filters, and a selected-work column on iPad.
 Native email-confirmation and password-reset completion links, protected local
 resume restart coverage, and pre-save list reconciliation are included in the
-second beta slice. These changes require a green macOS CI run before the slice
-is accepted.
+second beta slice. The third beta slice preserves a pending work or public-
+collection save across the sign-in sheet and completes it after successful
+authentication. These changes require a green macOS CI run before the slices
+are accepted.
 
 1. **In progress.** Finish work/edition presentation: richer bibliography and rights summaries,
    collection links, removed/restricted/empty/retry states, stable covers, and

@@ -125,7 +125,7 @@ final class ReaderRepositoryTests: XCTestCase {
         }
 
         let recorded = try await repository.savePosition(
-            fileID: fileID,
+            fileID: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
             positionType: "page",
             positionValue: "7",
             progressPercent: 35,

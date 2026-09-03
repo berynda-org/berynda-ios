@@ -210,9 +210,9 @@ final class AuthenticationServiceTests: XCTestCase {
 
         XCTAssertTrue(result.requiresEmailConfirmation)
         let requests = await transport.recordedRequests()
-        XCTAssertEqual(requests.map { $0.url?.path }, [
-            "/api/v1/auth/register/",
-            "/api/v1/auth/password-reset/",
+        XCTAssertEqual(requests.map { $0.url?.absoluteString }, [
+            "https://berynda.org/api/v1/auth/register/",
+            "https://berynda.org/api/v1/auth/password-reset/",
         ])
         let registrationBody = try jsonObject(requests[0].body)
         XCTAssertEqual(registrationBody["email"] as? String, "reader@example.org")

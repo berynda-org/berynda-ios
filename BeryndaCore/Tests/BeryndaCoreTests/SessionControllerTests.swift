@@ -97,6 +97,10 @@ private actor AuthenticationStub: AuthenticationServing {
 
     func requestPasswordReset(email: String) async throws {}
 
+    func confirmEmail(token: String) async throws -> UserProfile { loginSession.user }
+
+    func confirmPasswordReset(uid: String, token: String, newPassword: String) async throws {}
+
     func refresh(refreshToken: String) async throws -> AuthTokens {
         refreshCallsValue += 1
         if refreshDelayNanoseconds > 0 {

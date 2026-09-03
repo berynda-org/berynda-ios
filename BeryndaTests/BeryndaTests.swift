@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import BeryndaCore
 @testable import Berynda
@@ -17,6 +18,25 @@ final class BeryndaTests: XCTestCase {
 
         XCTAssertNotEqual(first.id, second.id)
         XCTAssertNotEqual(first, second)
+    }
+
+    func testProtectedReadingPositionSurvivesStoreRestartAndCanBeCleared() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let fileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+
+        let firstStore = LocalReadingPositionStore(directory: directory)
+        await firstStore.save(page: 7, totalPages: 20, for: fileID)
+
+        let relaunchedStore = LocalReadingPositionStore(directory: directory)
+        let restored = await relaunchedStore.position(for: fileID)
+        XCTAssertEqual(restored?.page, 7)
+        XCTAssertEqual(restored?.totalPages, 20)
+
+        await relaunchedStore.clearAll()
+        let cleared = await relaunchedStore.position(for: fileID)
+        XCTAssertNil(cleared)
     }
 
     @MainActor

@@ -141,6 +141,7 @@ extension LibraryViewModel.SaveResult {
         switch self {
         case .saved: "Додано до бібліографічного списку."
         case .alreadySaved: "Цей твір уже є у вашому списку."
+        case .inProgress: "Збереження вже виконується."
         case .signInRequired: "Увійдіть у профілі, щоб зберігати твори."
         case let .failed(message): message
         }

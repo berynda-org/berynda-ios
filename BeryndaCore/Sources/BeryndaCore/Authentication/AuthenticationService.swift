@@ -6,7 +6,13 @@ import FoundationNetworking
 public protocol AuthenticationServing: Sendable {
     func login(email: String, password: String) async throws -> AuthSession
     func register(email: String, password: String, displayName: String) async throws -> RegistrationResult
+    func confirmEmail(token: String) async throws -> UserProfile
     func requestPasswordReset(email: String) async throws
+    func confirmPasswordReset(
+        uid: String,
+        token: String,
+        newPassword: String
+    ) async throws
     func refresh(refreshToken: String) async throws -> AuthTokens
     func logout(accessToken: String, refreshToken: String) async throws
 }
@@ -71,6 +77,35 @@ public actor LiveAuthenticationService: AuthenticationServing {
         )
     }
 
+    public func confirmEmail(token: String) async throws -> UserProfile {
+        guard Self.isSafeLinkValue(token, maximumLength: 4_096) else {
+            throw SessionError.invalidInput
+        }
+        return try await get(path: "auth/confirm-email/\(token)/")
+    }
+
+    public func confirmPasswordReset(
+        uid: String,
+        token: String,
+        newPassword: String
+    ) async throws {
+        guard Self.isSafeLinkValue(uid, maximumLength: 512),
+              Self.isSafeLinkValue(token, maximumLength: 2_048),
+              newPassword.count >= 8
+        else { throw SessionError.invalidInput }
+        let _: StatusResponse = try await post(
+            path: "auth/password-reset/confirm/",
+            body: PasswordResetConfirmationBody(
+                uid: uid,
+                token: token,
+                newPassword: newPassword,
+                newPasswordConfirm: newPassword
+            ),
+            bearerToken: nil,
+            unauthorizedError: .invalidInput
+        )
+    }
+
     public func refresh(refreshToken: String) async throws -> AuthTokens {
         guard AuthTokens.isValidJWT(refreshToken) else { throw SessionError.invalidToken }
         let response: RefreshResponse = try await post(
@@ -93,6 +128,52 @@ public actor LiveAuthenticationService: AuthenticationServing {
             unauthorizedError: .expired,
             acceptsEmptyResponse: true
         )
+    }
+
+    private func get<Response: Decodable>(path: String) async throws -> Response {
+        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
+            throw SessionError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(language(), forHTTPHeaderField: "Accept-Language")
+        request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-ID")
+
+        let data: Data
+        let http: HTTPURLResponse
+        do {
+            (data, http) = try await transport.data(for: request, maximumBytes: 1 * 1_024 * 1_024)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            throw SessionError.unavailable
+        }
+        switch http.statusCode {
+        case 200..<300:
+            let contentType = http.value(forHTTPHeaderField: "Content-Type")?
+                .split(separator: ";", maxSplits: 1)
+                .first
+                .map { String($0).lowercased() }
+            guard contentType == "application/json" || contentType?.hasSuffix("+json") == true,
+                  let response = try? decoder.decode(Response.self, from: data)
+            else { throw SessionError.invalidResponse }
+            return response
+        case 400, 401, 404, 409, 422:
+            throw SessionError.invalidInput
+        default:
+            throw SessionError.unavailable
+        }
+    }
+
+    private static func isSafeLinkValue(_ value: String, maximumLength: Int) -> Bool {
+        guard !value.isEmpty, value.count <= maximumLength else { return false }
+        return !value.unicodeScalars.contains {
+            CharacterSet.controlCharacters.contains($0)
+                || $0 == "/" || $0 == "?" || $0 == "#"
+        }
     }
 
     private func post<Body: Encodable, Response: Decodable>(
@@ -184,6 +265,19 @@ private struct RegistrationBody: Encodable {
 
 private struct PasswordResetBody: Encodable {
     let email: String
+}
+
+private struct PasswordResetConfirmationBody: Encodable {
+    let uid: String
+    let token: String
+    let newPassword: String
+    let newPasswordConfirm: String
+
+    enum CodingKeys: String, CodingKey {
+        case uid, token
+        case newPassword = "new_password"
+        case newPasswordConfirm = "new_password_confirm"
+    }
 }
 
 private struct RefreshBody: Encodable {

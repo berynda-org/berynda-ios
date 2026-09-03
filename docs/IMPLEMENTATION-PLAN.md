@@ -138,21 +138,24 @@ restoration, profile editing, language/appearance/privacy controls, local and
 server reading-position persistence, Continue Reading, bibliography lists,
 duplicate-aware quick add and reader bookmarks, saved/featured collections,
 catalog readability/language filters, and a selected-work column on iPad.
-These changes require a green macOS CI run before the slice is accepted.
+Native email-confirmation and password-reset completion links, protected local
+resume restart coverage, and pre-save list reconciliation are included in the
+second beta slice. These changes require a green macOS CI run before the slice
+is accepted.
 
-1. Finish work/edition presentation: richer bibliography and rights summaries,
+1. **In progress.** Finish work/edition presentation: richer bibliography and rights summaries,
    collection links, removed/restricted/empty/retry states, stable covers, and
    true selected-work columns on iPad.
-2. Add authentication UI for login, registration confirmation, password reset,
+2. **In progress.** Add authentication UI for login, registration confirmation, password reset,
    logout, session expiry, relaunch persistence, and return-to-action behavior.
-3. Implement reading-position persistence: quiet-interval PUT, background and
+3. **In progress.** Implement reading-position persistence: quiet-interval PUT, background and
    dismiss flush, privacy-disabled handling, local resume, and restart tests.
-4. Replace the Library placeholder with Continue Reading, bibliography lists,
+4. **In progress.** Replace the Library placeholder with Continue Reading, bibliography lists,
    quick add, list-item reader bookmarks, and saved public collections with
    duplicate-safe reconciliation.
-5. Replace the Profile placeholder with account editing, language, appearance,
+5. **In progress.** Replace the Profile placeholder with account editing, language, appearance,
    reading-history privacy, storage management, logout, and local-resume cleanup.
-6. Complete catalog discovery: readable/filter controls, featured collections,
+6. **In progress.** Complete catalog discovery: readable/filter controls, featured collections,
    recommendations, saved collections, and recently viewed fallback.
 
 #### Milestone C — reader, offline, and inclusive-quality hardening

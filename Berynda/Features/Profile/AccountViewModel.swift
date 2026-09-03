@@ -10,6 +10,8 @@ final class AccountViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var registrationEmail: String?
     @Published var passwordResetEmail: String?
+    @Published private(set) var emailConfirmationComplete = false
+    @Published private(set) var passwordResetComplete = false
 
     private let session: SessionController
     private let authentication: any AuthenticationServing
@@ -48,6 +50,7 @@ final class AccountViewModel: ObservableObject {
 
     func register(email: String, password: String, displayName: String) async -> Bool {
         await perform {
+            emailConfirmationComplete = false
             let result = try await authentication.register(
                 email: email,
                 password: password,
@@ -59,8 +62,37 @@ final class AccountViewModel: ObservableObject {
 
     func requestPasswordReset(email: String) async -> Bool {
         await perform {
+            passwordResetComplete = false
             try await authentication.requestPasswordReset(email: email)
             passwordResetEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    func confirmEmail(token: String) async -> Bool {
+        await perform {
+            emailConfirmationComplete = false
+            _ = try await authentication.confirmEmail(token: token)
+            registrationEmail = nil
+            emailConfirmationComplete = true
+        }
+    }
+
+    func confirmPasswordReset(uid: String, token: String, newPassword: String) async -> Bool {
+        await perform {
+            passwordResetComplete = false
+            try await authentication.confirmPasswordReset(
+                uid: uid,
+                token: token,
+                newPassword: newPassword
+            )
+            if await session.state() == .authenticated {
+                await session.markExpired()
+                state = .expired
+                profile = nil
+                await localPositions.clearAll()
+            }
+            passwordResetComplete = true
+            passwordResetEmail = nil
         }
     }
 

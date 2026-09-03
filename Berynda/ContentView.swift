@@ -32,6 +32,12 @@ struct ContentView: View {
             environment.consumePendingRoute()
         }
         .task { await environment.account.restore() }
+        .sheet(item: $environment.presentedAuthenticationLink) { presentation in
+            AuthenticationLinkView(
+                route: presentation.route,
+                account: environment.account
+            )
+        }
     }
 
     private var preferredColorScheme: ColorScheme? {

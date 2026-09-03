@@ -222,6 +222,62 @@ final class AuthenticationServiceTests: XCTestCase {
         XCTAssertEqual(resetBody["email"] as? String, "reader@example.org")
     }
 
+    func testEmailAndPasswordConfirmationUseNativeContracts() async throws {
+        let profile = Data(
+            #"{"id":"11111111-1111-1111-1111-111111111111","email":"reader@example.org","display_name":"Читач"}"#.utf8
+        )
+        let transport = AuthTransportStub([
+            AuthStubResponse(status: 200, data: profile, headers: ["Content-Type": "application/json"]),
+            AuthStubResponse(
+                status: 200,
+                data: Data(#"{"status":"password_updated"}"#.utf8),
+                headers: ["Content-Type": "application/json"]
+            ),
+        ])
+        let service = LiveAuthenticationService(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport
+        )
+
+        let confirmed = try await service.confirmEmail(token: "signed:confirmation-token")
+        try await service.confirmPasswordReset(
+            uid: "encoded-user",
+            token: "reset-token",
+            newPassword: "new-password-123"
+        )
+
+        XCTAssertEqual(confirmed.email, "reader@example.org")
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { $0.url?.absoluteString }, [
+            "https://berynda.org/api/v1/auth/confirm-email/signed:confirmation-token/",
+            "https://berynda.org/api/v1/auth/password-reset/confirm/",
+        ])
+        XCTAssertEqual(requests.map(\.method), ["GET", "POST"])
+        XCTAssertNil(requests[0].body)
+        let resetBody = try jsonObject(requests[1].body)
+        XCTAssertEqual(resetBody["uid"] as? String, "encoded-user")
+        XCTAssertEqual(resetBody["token"] as? String, "reset-token")
+        XCTAssertEqual(resetBody["new_password"] as? String, "new-password-123")
+        XCTAssertEqual(resetBody["new_password_confirm"] as? String, "new-password-123")
+    }
+
+    func testConfirmationRejectsPathInjectionBeforeNetwork() async {
+        let transport = AuthTransportStub([])
+        let service = LiveAuthenticationService(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport
+        )
+
+        do {
+            _ = try await service.confirmEmail(token: "unsafe/../token")
+            XCTFail("Expected invalid input")
+        } catch {
+            XCTAssertEqual(error as? SessionError, .invalidInput)
+        }
+        let requests = await transport.recordedRequests()
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     private func jsonObject(_ data: Data?) throws -> [String: Any] {
         let data = try XCTUnwrap(data)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

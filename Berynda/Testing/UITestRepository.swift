@@ -187,6 +187,16 @@ actor UITestAuthenticationService: AuthenticationServing {
 
     func requestPasswordReset(email: String) async throws {}
 
+    func confirmEmail(token: String) async throws -> UserProfile {
+        UserProfile(
+            id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+            email: "reader@example.org",
+            displayName: "Тестовий читач"
+        )
+    }
+
+    func confirmPasswordReset(uid: String, token: String, newPassword: String) async throws {}
+
     func refresh(refreshToken: String) async throws -> AuthTokens {
         throw UITestFixtureError.unsupported
     }

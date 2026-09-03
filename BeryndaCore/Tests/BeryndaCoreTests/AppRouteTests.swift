@@ -48,6 +48,36 @@ final class AppRouteTests: XCTestCase {
         )
     }
 
+    func testParsesAccountConfirmationLinksWithoutExposingThemAsCatalogRoutes() {
+        XCTAssertEqual(
+            AppRoute(
+                url: URL(string: "https://berynda.org/auth/confirm-email?token=signed%3Avalue")!
+            ),
+            .confirmEmail(token: "signed:value")
+        )
+        XCTAssertEqual(
+            AppRoute(
+                url: URL(string: "https://berynda.org/reset-password?uid=dXNlcg&token=reset-token")!
+            ),
+            .resetPassword(uid: "dXNlcg", token: "reset-token")
+        )
+    }
+
+    func testRejectsMalformedOrDuplicatedAccountSecrets() {
+        let invalidURLs = [
+            "https://berynda.org/auth/confirm-email",
+            "https://berynda.org/auth/confirm-email?token=one&token=two",
+            "https://berynda.org/auth/confirm-email?token=unsafe%2Ftoken",
+            "https://berynda.org/reset-password?uid=user",
+            "https://berynda.org/reset-password?uid=user&token=one&token=two",
+            "https://berynda.org/reset-password?uid=unsafe%2Fuser&token=token",
+        ]
+
+        for rawURL in invalidURLs {
+            XCTAssertNil(AppRoute(url: URL(string: rawURL)!), rawURL)
+        }
+    }
+
     func testRejectsMalformedOrAmbiguousReaderPages() {
         let invalidURLs = [
             "https://berynda.org/read/not-a-uuid",

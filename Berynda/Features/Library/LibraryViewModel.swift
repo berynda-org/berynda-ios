@@ -18,6 +18,7 @@ final class LibraryViewModel: ObservableObject {
     enum SaveResult: Equatable {
         case saved
         case alreadySaved
+        case inProgress
         case signInRequired
         case failed(String)
     }
@@ -71,6 +72,7 @@ final class LibraryViewModel: ObservableObject {
 
     func setCollectionSaved(_ collection: PublicCollectionSummary, saved: Bool) async -> SaveResult {
         guard account.state == .authenticated else { return .signInRequired }
+        guard !isMutating else { return .inProgress }
         isMutating = true
         defer { isMutating = false }
         do {
@@ -88,6 +90,16 @@ final class LibraryViewModel: ObservableObject {
         page: Int? = nil
     ) async -> SaveResult {
         guard account.state == .authenticated else { return .signInRequired }
+        guard !isMutating else { return .inProgress }
+        if case .loaded = state {
+            // The current snapshot can be used for duplicate detection.
+        } else {
+            await load()
+            guard case .loaded = state else {
+                if case let .failed(message) = state { return .failed(message) }
+                return .failed("Не вдалося перевірити бібліотечний список.")
+            }
+        }
         if isDuplicate(workID: workID, fileID: fileID, page: page) {
             return .alreadySaved
         }
@@ -110,6 +122,7 @@ final class LibraryViewModel: ObservableObject {
 
     func createList(title: String) async -> Bool {
         guard account.state == .authenticated else { return false }
+        guard !isMutating else { return false }
         let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return false }
         isMutating = true

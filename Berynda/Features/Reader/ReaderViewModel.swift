@@ -191,7 +191,7 @@ final class ReaderViewModel: ObservableObject {
             return min(max(initialPage, 1), max(info.totalPages ?? initialPage, 1))
         }
         let remotePage = info.readingPosition?.positionType == "page"
-            ? info.readingPosition?.positionValue.flatMap(Int.init)
+            ? info.readingPosition?.positionValue.flatMap { Int($0) }
             : nil
         let page = remotePage ?? local?.page ?? 1
         return min(max(page, 1), max(info.totalPages ?? page, 1))

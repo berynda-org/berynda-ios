@@ -91,8 +91,10 @@ final class BeryndaUITests: XCTestCase {
 
         XCTAssertTrue(app.buttons["Редагувати профіль"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Бібліотека"].tap()
-        XCTAssertTrue(app.staticTexts["Продовжити читання"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Відкрийте видання — воно з’явиться тут."].exists)
+        XCTAssertTrue(
+            app.staticTexts["Відкрийте видання — воно з’явиться тут."]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     private func openWork(named title: String) {

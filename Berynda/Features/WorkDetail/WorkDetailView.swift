@@ -19,6 +19,7 @@ struct WorkDetailView: View {
                 HStack(alignment: .top, spacing: BeryndaSpacing.standard) {
                     BeryndaBookCover(
                         title: work.title,
+                        imageURL: work.coverImageURL,
                         glyph: work.coverGlyph,
                         tone: work.coverTone,
                         width: 88,

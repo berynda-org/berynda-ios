@@ -25,13 +25,11 @@ final class AppEnvironment: ObservableObject {
         self.networkMonitor = networkMonitor ?? NetworkMonitor()
     }
 
-    static func live(bundle: Bundle = .main) -> AppEnvironment {
-        guard let raw = bundle.object(forInfoDictionaryKey: "API_BASE_URL") as? String,
-              let baseURL = URL(string: raw),
-              baseURL.path.hasSuffix("/api/v1/")
-        else {
-            preconditionFailure("API_BASE_URL must be a fixed /api/v1/ URL supplied by build configuration")
-        }
+    static func live(baseURL: URL = AppConfiguration.apiBaseURL) -> AppEnvironment {
+        precondition(
+            baseURL.scheme == "https" && baseURL.path.hasSuffix("/api/v1/"),
+            "The production API URL must use HTTPS and end in /api/v1/."
+        )
         let session = SessionController(
             tokenStore: KeychainTokenStore(),
             authentication: LiveAuthenticationService(baseURL: baseURL)

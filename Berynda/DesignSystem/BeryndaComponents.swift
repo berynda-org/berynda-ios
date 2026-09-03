@@ -72,14 +72,46 @@ struct BeryndaErrorState: View {
 
 struct BeryndaBookCover: View {
     let title: String
+    var imageURL: URL? = nil
     let glyph: String?
     let tone: String?
     var width: CGFloat = 54
     var height: CGFloat = 78
 
     var body: some View {
+        coverContent
+            .frame(width: width, height: height)
+            .clipShape(coverShape)
+            .overlay {
+                coverShape.stroke(.black.opacity(0.14), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var coverContent: some View {
+        if let imageURL {
+            AsyncImage(url: imageURL, transaction: Transaction(animation: .easeInOut)) { phase in
+                switch phase {
+                case let .success(image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .empty, .failure:
+                    generatedCover
+                @unknown default:
+                    generatedCover
+                }
+            }
+        } else {
+            generatedCover
+        }
+    }
+
+    private var generatedCover: some View {
         let palette = BeryndaColor.coverPalette(for: tone)
-        RoundedRectangle(cornerRadius: max(width * 0.09, 4), style: .continuous)
+        return Rectangle()
             .fill(palette.background)
             .overlay(alignment: .leading) {
                 Rectangle()
@@ -99,9 +131,10 @@ struct BeryndaBookCover: View {
                     .foregroundStyle(palette.ink)
                     .padding(width * 0.14)
             }
-            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-            .frame(width: width, height: height)
-            .accessibilityHidden(true)
+    }
+
+    private var coverShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: max(width * 0.09, 4), style: .continuous)
     }
 
     private var displayGlyph: String {

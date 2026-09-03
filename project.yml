@@ -40,7 +40,6 @@ targets:
     info:
       path: Berynda/Info.plist
       properties:
-        API_BASE_URL: https://berynda.org/api/v1/
         CFBundleDisplayName: Берында
         CFBundleURLTypes:
           - CFBundleURLName: org.berynda.ios

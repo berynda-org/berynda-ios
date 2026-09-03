@@ -4,6 +4,8 @@ import BeryndaCore
 
 final class BeryndaTests: XCTestCase {
     func testAppConfigurationUsesHTTPS() {
+        XCTAssertEqual(AppConfiguration.apiBaseURL.scheme, "https")
+        XCTAssertTrue(AppConfiguration.apiBaseURL.path.hasSuffix("/api/v1/"))
         XCTAssertEqual(AppConfiguration.supportURL.scheme, "https")
         XCTAssertEqual(AppConfiguration.privacyURL.scheme, "https")
     }

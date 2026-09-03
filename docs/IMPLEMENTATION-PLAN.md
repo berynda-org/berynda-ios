@@ -106,10 +106,10 @@ of its later features exists.
    contains the AASA routes for works and readers; production deployment and
    end-to-end universal-link verification remain.
 5. **Design-system completion — partial:** shared spacing, twelve canonical
-   cover palettes, native generated-cover fallback, and reusable
-   loading/empty/error/offline states are implemented. Uploaded-cover loading,
-   formal dark/increased-contrast review, and screenshot comparison with the
-   HTML mockups remain.
+   cover palettes, uploaded-cover loading with a native generated fallback,
+   and reusable loading/empty/error/offline states are implemented. Formal
+   dark/increased-contrast review and screenshot comparison with the HTML
+   mockups remain.
 6. **Catalog completion — partial:** production-compatible prefix search,
    debouncing, stale-response suppression, continuous pagination,
    de-duplication, pull-to-refresh, and page-level retry are implemented and

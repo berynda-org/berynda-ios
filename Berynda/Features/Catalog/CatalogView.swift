@@ -114,6 +114,7 @@ private struct WorkRow: View {
         HStack(alignment: .top, spacing: 14) {
             BeryndaBookCover(
                 title: work.title,
+                imageURL: work.coverImageURL,
                 glyph: work.coverGlyph,
                 tone: work.coverTone
             )

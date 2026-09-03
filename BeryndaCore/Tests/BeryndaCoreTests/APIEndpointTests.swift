@@ -53,7 +53,7 @@ final class APIEndpointTests: XCTestCase {
 
         XCTAssertEqual(components.path, "/api/v1/works/")
         XCTAssertEqual(query["page"]!, "3")
-        XCTAssertEqual(query["q"]!, "  Енеїда  ")
+        XCTAssertEqual(query["q"]!, "Енеїда")
         XCTAssertNil(query["search"])
     }
 

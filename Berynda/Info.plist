@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>API_BASE_URL</key>
-    <string>$(API_BASE_URL)</string>
+    <string>https://berynda.org/api/v1/</string>
     <key>CFBundleDisplayName</key>
     <string>Берында</string>
     <key>CFBundleURLTypes</key>

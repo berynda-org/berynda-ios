@@ -1,6 +1,6 @@
 # Berynda iOS implementation plan
 
-Status: anonymous vertical slice, core document renderers, macOS build gate, transport hardening, session foundation, and app-side navigation implemented; product slices remain
+Status: testable anonymous vertical slice with live search, catalog pagination, work/edition flow, core document renderers, macOS build and app-test gates, transport hardening, session foundation, and app-side navigation implemented; product and TestFlight slices remain
 Written: 30 August 2026
 Implementation target: this native SwiftUI repository
 Reference architecture: `D:/lexykon/client/ios`
@@ -97,20 +97,25 @@ of its later features exists.
    race suppression, one-time 401 replay, explicit expiry, best-effort server
    revocation on logout, and credential-redaction tests. Authentication screens
    and profile presentation remain in slice 11.
-4. **Navigation completion — app side implemented, production association
-   blocked:** `pendingRoute` is consumed; work links route on both size classes;
+4. **Navigation completion — app and association file implemented, deployment
+   pending:** `pendingRoute` is consumed; work links route on both size classes;
    reader links validate their file UUID and PDF `p`/legacy `page`; and catalog
    selection survives tab and size-class changes. EPUB `cfi` links currently
    open the correct file but exact native publication-location interoperability
-   remains in slice 10. On 3 September 2026 the production association endpoint
-   returned HTTP 404; publishing it requires the final Apple Team ID and a web
-   deployment before universal links can be verified end to end.
-5. **Design-system completion:** typography/layout tokens, real generated and
-   uploaded covers, reusable loading/empty/error/offline components, dark and
-   increased-contrast review, and visual comparison with the HTML mockups.
-6. **Catalog completion:** pagination, readable/filter controls, featured and
-   saved public collections, recommendations, robust removal/restriction
-   states, request cancellation tests, and recently viewed offline fallback.
+   remains in slice 10. Team `KHMPLP3CXQ` is configured and the web repository
+   contains the AASA routes for works and readers; production deployment and
+   end-to-end universal-link verification remain.
+5. **Design-system completion — partial:** shared spacing, twelve canonical
+   cover palettes, native generated-cover fallback, and reusable
+   loading/empty/error/offline states are implemented. Uploaded-cover loading,
+   formal dark/increased-contrast review, and screenshot comparison with the
+   HTML mockups remain.
+6. **Catalog completion — partial:** production-compatible prefix search,
+   debouncing, stale-response suppression, continuous pagination,
+   de-duplication, pull-to-refresh, and page-level retry are implemented and
+   app-unit tested. Readable/filter controls, featured and saved public
+   collections, recommendations, removal/restriction fixtures, and recently
+   viewed offline fallback remain.
 7. **Work and edition completion:** richer bibliography and rights summaries,
    collection links, stable cover behavior, retry/empty fixtures, and true
    selected-work columns on iPad rather than the current single detail stack.
@@ -139,9 +144,11 @@ of its later features exists.
 15. **Localization/accessibility:** String Catalog for Ukrainian and English,
     pseudolocalization, VoiceOver order, 44-point targets, Reduce Motion,
     keyboard/iPad navigation, narrow-screen and accessibility-size audits.
-16. **Automated quality gates:** meaningful URLProtocol integration coverage,
-    stable identifier alignment, full XCUITest journeys, performance/leak
-    checks, staging contracts, and oldest/newest supported OS and device matrix.
+16. **Automated quality gates — partial:** core package tests, an unsigned app
+    build, and the app unit-test target run in CI. Meaningful URLProtocol
+    integration coverage, stable identifier alignment, full XCUITest journeys,
+    performance/leak checks, staging contracts, and the oldest/newest supported
+    OS and device matrix remain.
 17. **Product configuration:** signed/static minimum/latest build, App Store
     URL and maintenance state, forced-update/maintenance screens, and safe
     configuration caching.

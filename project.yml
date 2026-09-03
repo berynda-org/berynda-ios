@@ -40,7 +40,7 @@ targets:
     info:
       path: Berynda/Info.plist
       properties:
-        API_BASE_URL: $(API_BASE_URL)
+        API_BASE_URL: https://berynda.org/api/v1/
         CFBundleDisplayName: Берында
         CFBundleURLTypes:
           - CFBundleURLName: org.berynda.ios
@@ -57,11 +57,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.berynda.ios
         PRODUCT_NAME: Berynda
-      configs:
-        Debug:
-          API_BASE_URL: http://127.0.0.1:8000/api/v1/
-        Release:
-          API_BASE_URL: https://berynda.org/api/v1/
     entitlements:
       path: Berynda/Berynda.entitlements
 

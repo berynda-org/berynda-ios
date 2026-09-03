@@ -17,12 +17,13 @@ public enum APIEndpoint: Sendable, Equatable {
         case let .works(search, page):
             path = "works/"
             queryItems.append(.init(name: "page", value: String(page)))
-            if let search, !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let normalizedSearch = search?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !normalizedSearch.isEmpty {
                 // The public catalogue uses its prefix-aware `q` filter.
                 // DRF's conventional `search` parameter is not enabled on
                 // this endpoint, so sending it silently returned the full
                 // catalogue instead of search results.
-                queryItems.append(.init(name: "q", value: search))
+                queryItems.append(.init(name: "q", value: normalizedSearch))
             }
         case let .work(slug):
             path = "works/\(Self.encodePathSegment(slug))/"

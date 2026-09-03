@@ -11,6 +11,7 @@ struct AuthenticationView: View {
 
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var account: AccountViewModel
+    private let onAuthenticated: () async -> Void
     @State private var mode: Mode = .signIn
     @State private var email = ""
     @State private var displayName = ""
@@ -18,6 +19,14 @@ struct AuthenticationView: View {
     @State private var passwordConfirmation = ""
     @State private var showsPasswordReset = false
     @State private var localError: String?
+
+    init(
+        account: AccountViewModel,
+        onAuthenticated: @escaping () async -> Void = {}
+    ) {
+        self.account = account
+        self.onAuthenticated = onAuthenticated
+    }
 
     var body: some View {
         NavigationStack {
@@ -107,7 +116,10 @@ struct AuthenticationView: View {
                     displayName: displayName
                 )
             }
-            if succeeded, mode == .signIn { dismiss() }
+            if succeeded, mode == .signIn {
+                await onAuthenticated()
+                dismiss()
+            }
         }
     }
 

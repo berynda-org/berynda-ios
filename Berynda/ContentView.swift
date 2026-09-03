@@ -32,11 +32,27 @@ struct ContentView: View {
             environment.consumePendingRoute()
         }
         .task { await environment.account.restore() }
+        .sheet(isPresented: $environment.showsAuthentication, onDismiss: {
+            environment.authenticationDismissed()
+        }) {
+            AuthenticationView(
+                account: environment.account,
+                onAuthenticated: { await environment.resumePendingAuthenticatedAction() }
+            )
+        }
         .sheet(item: $environment.presentedAuthenticationLink) { presentation in
             AuthenticationLinkView(
                 route: presentation.route,
                 account: environment.account
             )
+        }
+        .alert("Бібліотека", isPresented: Binding(
+            get: { environment.authenticatedActionMessage != nil },
+            set: { if !$0 { environment.authenticatedActionMessage = nil } }
+        )) {
+            Button("Гаразд", role: .cancel) {}
+        } message: {
+            Text(environment.authenticatedActionMessage ?? "")
         }
     }
 

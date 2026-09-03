@@ -99,7 +99,11 @@ struct WorkDetailView: View {
                 Button("До списку", systemImage: "bookmark") {
                     Task {
                         let result = await environment.library.quickAdd(workID: work.id)
-                        saveMessage = result.message
+                        if result == .signInRequired {
+                            environment.requireAuthentication(for: .addWork(work.id))
+                        } else {
+                            saveMessage = result.message
+                        }
                     }
                 }
                 .disabled(environment.library.isMutating)

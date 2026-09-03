@@ -217,7 +217,11 @@ private struct CollectionShelf: View {
                 Button("Зберегти", systemImage: "bookmark") {
                     Task {
                         let result = await environment.library.setCollectionSaved(collection, saved: true)
-                        saveMessage = result.message
+                        if result == .signInRequired {
+                            environment.requireAuthentication(for: .saveCollection(collection))
+                        } else {
+                            saveMessage = result.message
+                        }
                     }
                 }
                 .labelStyle(.iconOnly)

@@ -17,6 +17,9 @@ final class AppEnvironment: ObservableObject {
     @Published var tabletCatalogSelection: CatalogDestination?
     @Published var presentedReader: ReaderPresentation?
     @Published var presentedAuthenticationLink: AuthenticationLinkPresentation?
+    @Published var showsAuthentication = false
+    @Published var authenticatedActionMessage: String?
+    private var pendingAuthenticatedAction: AuthenticatedAction?
 
     init(
         catalogRepository: any CatalogRepository,
@@ -123,6 +126,52 @@ final class AppEnvironment: ObservableObject {
             initialPage: initialPage
         )
     }
+
+    func requireAuthentication(for action: AuthenticatedAction) {
+        pendingAuthenticatedAction = action
+        showsAuthentication = true
+    }
+
+    func authenticationDismissed() {
+        if account.state != .authenticated {
+            pendingAuthenticatedAction = nil
+        }
+    }
+
+    func resumePendingAuthenticatedAction() async {
+        guard account.state == .authenticated,
+              let action = pendingAuthenticatedAction else { return }
+        pendingAuthenticatedAction = nil
+
+        let result: LibraryViewModel.SaveResult
+        let successMessage: String
+        switch action {
+        case let .addWork(workID):
+            result = await library.quickAdd(workID: workID)
+            successMessage = "Твір додано до бібліографічного списку."
+        case let .saveCollection(collection):
+            result = await library.setCollectionSaved(collection, saved: true)
+            successMessage = "Колекцію додано до бібліотеки."
+        }
+
+        switch result {
+        case .saved:
+            authenticatedActionMessage = successMessage
+        case .alreadySaved:
+            authenticatedActionMessage = "Цей запис уже є у вашій бібліотеці."
+        case .inProgress:
+            authenticatedActionMessage = "Інше збереження вже виконується. Спробуйте ще раз."
+        case .signInRequired:
+            authenticatedActionMessage = "Сеанс завершився. Увійдіть і повторіть дію."
+        case let .failed(message):
+            authenticatedActionMessage = message
+        }
+    }
+}
+
+enum AuthenticatedAction {
+    case addWork(UUID)
+    case saveCollection(PublicCollectionSummary)
 }
 
 enum CatalogDestination: Hashable {

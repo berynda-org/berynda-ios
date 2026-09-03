@@ -5,7 +5,6 @@ struct WorkDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     let work: WorkSummary
     @StateObject private var model: WorkDetailViewModel
-    @State private var readerRoute: ReaderRoute?
 
     init(work: WorkSummary, repository: any CatalogRepository) {
         self.work = work
@@ -45,7 +44,10 @@ struct WorkDetailView: View {
                 case let .loaded(editions):
                     ForEach(editions) { edition in
                         EditionRow(edition: edition) { fileID in
-                            readerRoute = ReaderRoute(fileID: fileID, title: edition.displayTitle)
+                            environment.presentReader(
+                                fileID: fileID,
+                                fallbackTitle: edition.displayTitle
+                            )
                         }
                     }
                 case let .failed(message):
@@ -62,20 +64,7 @@ struct WorkDetailView: View {
         .background(BeryndaColor.paper)
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.load() }
-        .fullScreenCover(item: $readerRoute) { route in
-            ReaderView(
-                fileID: route.fileID,
-                fallbackTitle: route.title,
-                repository: environment.readerRepository
-            )
-        }
     }
-}
-
-private struct ReaderRoute: Identifiable {
-    let fileID: UUID
-    let title: String
-    var id: UUID { fileID }
 }
 
 private struct EditionRow: View {

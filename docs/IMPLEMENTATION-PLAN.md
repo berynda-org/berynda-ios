@@ -1,6 +1,6 @@
 # Berynda iOS implementation plan
 
-Status: anonymous vertical slice, core document renderers, macOS build gate, transport hardening, and session foundation implemented; product slices remain
+Status: anonymous vertical slice, core document renderers, macOS build gate, transport hardening, session foundation, and app-side navigation implemented; product slices remain
 Written: 30 August 2026
 Implementation target: this native SwiftUI repository
 Reference architecture: `D:/lexykon/client/ios`
@@ -65,6 +65,9 @@ of its later features exists.
   link parser, request IDs, language headers, typed public catalog transport,
   response-size/MIME checks, and cancellation-aware feature models;
 - iPhone catalog tab flow and basic iPad sidebar shell;
+- shared iPhone/iPad catalog route state, validated work and reader deep-link
+  consumption, direct work loading, exact PDF-page opening, and selection restore
+  across tab and size-class changes;
 - anonymous search, work detail, edition availability, and full-screen reader
   launch without exposing stored file formats;
 - server-controlled TXT/Markdown → EPUB → PDF selection with DJVU excluded;
@@ -94,9 +97,14 @@ of its later features exists.
    race suppression, one-time 401 replay, explicit expiry, best-effort server
    revocation on logout, and credential-redaction tests. Authentication screens
    and profile presentation remain in slice 11.
-4. **Navigation completion:** consume `pendingRoute`, route work links on both
-   size classes, open reader deep links at the validated page/location, restore
-   iPad selection, and verify the production association file.
+4. **Navigation completion — app side implemented, production association
+   blocked:** `pendingRoute` is consumed; work links route on both size classes;
+   reader links validate their file UUID and PDF `p`/legacy `page`; and catalog
+   selection survives tab and size-class changes. EPUB `cfi` links currently
+   open the correct file but exact native publication-location interoperability
+   remains in slice 10. On 3 September 2026 the production association endpoint
+   returned HTTP 404; publishing it requires the final Apple Team ID and a web
+   deployment before universal links can be verified end to end.
 5. **Design-system completion:** typography/layout tokens, real generated and
    uploaded covers, reusable loading/empty/error/offline components, dark and
    increased-contrast review, and visual comparison with the HTML mockups.

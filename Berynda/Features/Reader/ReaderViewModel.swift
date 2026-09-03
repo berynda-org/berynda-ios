@@ -33,11 +33,13 @@ final class ReaderViewModel: ObservableObject {
     @Published var currentPage = 1
 
     let fileID: UUID
+    private let initialPage: Int?
     private let repository: any ReaderRepository
     private var pageTask: Task<Void, Never>?
 
-    init(fileID: UUID, repository: any ReaderRepository) {
+    init(fileID: UUID, initialPage: Int? = nil, repository: any ReaderRepository) {
         self.fileID = fileID
+        self.initialPage = initialPage
         self.repository = repository
     }
 
@@ -160,6 +162,9 @@ final class ReaderViewModel: ObservableObject {
     }
 
     private func restoredPage(from info: ReaderInfo) -> Int {
+        if let initialPage {
+            return min(max(initialPage, 1), max(info.totalPages ?? initialPage, 1))
+        }
         guard info.readingPosition?.positionType == "page",
               let raw = info.readingPosition?.positionValue,
               let page = Int(raw)

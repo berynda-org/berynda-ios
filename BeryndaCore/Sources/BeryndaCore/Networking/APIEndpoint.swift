@@ -21,7 +21,7 @@ public enum APIEndpoint: Sendable, Equatable {
                 queryItems.append(.init(name: "search", value: search))
             }
         case let .work(slug):
-            path = "works/\(slug.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? slug)/"
+            path = "works/\(Self.encodePathSegment(slug))/"
         case let .editions(workID):
             path = "works/\(workID.uuidString.lowercased())/editions/"
         case let .readerInfo(fileID):
@@ -43,5 +43,11 @@ public enum APIEndpoint: Sendable, Equatable {
         else { return nil }
         components.queryItems = queryItems.isEmpty ? nil : queryItems
         return components.url?.absoluteURL
+    }
+
+    private static func encodePathSegment(_ value: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/?#%")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
     }
 }

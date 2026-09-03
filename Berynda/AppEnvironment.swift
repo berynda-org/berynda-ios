@@ -10,6 +10,8 @@ final class AppEnvironment: ObservableObject {
     let session: SessionController
     @Published var selectedTab: RootTab = .catalog
     @Published var pendingRoute: AppRoute?
+    @Published var catalogPath: [CatalogDestination] = []
+    @Published var presentedReader: ReaderPresentation?
 
     init(
         catalogRepository: any CatalogRepository,
@@ -50,6 +52,43 @@ final class AppEnvironment: ObservableObject {
         selectedTab = .catalog
         pendingRoute = route
     }
+
+    func consumePendingRoute() {
+        guard let route = pendingRoute else { return }
+        pendingRoute = nil
+        selectedTab = .catalog
+        switch route {
+        case let .work(slug):
+            presentedReader = nil
+            catalogPath = [.linkedWork(identifier: slug)]
+        case let .reader(fileID, page):
+            presentedReader = ReaderPresentation(
+                fileID: fileID,
+                fallbackTitle: "Берында",
+                initialPage: page
+            )
+        }
+    }
+
+    func presentReader(fileID: UUID, fallbackTitle: String, initialPage: Int? = nil) {
+        presentedReader = ReaderPresentation(
+            fileID: fileID,
+            fallbackTitle: fallbackTitle,
+            initialPage: initialPage
+        )
+    }
+}
+
+enum CatalogDestination: Hashable {
+    case work(WorkSummary)
+    case linkedWork(identifier: String)
+}
+
+struct ReaderPresentation: Identifiable, Equatable {
+    let id = UUID()
+    let fileID: UUID
+    let fallbackTitle: String
+    let initialPage: Int?
 }
 
 enum RootTab: Hashable {

@@ -49,14 +49,11 @@ private struct CatalogLoadedView: View {
 }
 
 private struct WorkList: View {
-    @EnvironmentObject private var environment: AppEnvironment
     let works: [WorkSummary]
 
     var body: some View {
         List(works) { work in
-            NavigationLink {
-                WorkDetailView(work: work, repository: environment.catalogRepository)
-            } label: {
+            NavigationLink(value: CatalogDestination.work(work)) {
                 WorkRow(work: work)
             }
             .accessibilityIdentifier("catalog.work.\(work.id)")

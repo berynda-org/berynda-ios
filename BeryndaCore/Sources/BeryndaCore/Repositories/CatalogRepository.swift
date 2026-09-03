@@ -2,6 +2,7 @@ import Foundation
 
 public protocol CatalogRepository: Sendable {
     func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary>
+    func work(identifier: String) async throws -> WorkSummary
     func editions(workID: UUID) async throws -> [EditionSummary]
 }
 
@@ -14,6 +15,10 @@ public struct LiveCatalogRepository: CatalogRepository {
 
     public func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
         try await client.request(.works(search: search, page: page))
+    }
+
+    public func work(identifier: String) async throws -> WorkSummary {
+        try await client.request(.work(slug: identifier))
     }
 
     public func editions(workID: UUID) async throws -> [EditionSummary] {

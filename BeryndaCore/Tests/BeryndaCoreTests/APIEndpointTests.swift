@@ -34,4 +34,24 @@ final class APIEndpointTests: XCTestCase {
             "2000"
         )
     }
+
+    func testWorkURLUsesTheAPIWorkDetailPath() throws {
+        let url = try XCTUnwrap(APIEndpoint.work(slug: "eneida").url(relativeTo: baseURL))
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "https://berynda.org/api/v1/works/eneida/"
+        )
+    }
+
+    func testWorkIdentifierCannotInjectAnotherPathSegment() throws {
+        let url = try XCTUnwrap(
+            APIEndpoint.work(slug: "folder/name%2Fchild").url(relativeTo: baseURL)
+        )
+
+        XCTAssertEqual(
+            url.absoluteString,
+            "https://berynda.org/api/v1/works/folder%2Fname%252Fchild/"
+        )
+    }
 }

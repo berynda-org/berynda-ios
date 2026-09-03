@@ -64,9 +64,6 @@ targets:
           API_BASE_URL: https://berynda.org/api/v1/
     entitlements:
       path: Berynda/Berynda.entitlements
-      properties:
-        com.apple.developer.associated-domains:
-          - applinks:berynda.org
 
   BeryndaTests:
     type: bundle.unit-test

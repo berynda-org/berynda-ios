@@ -14,9 +14,20 @@ struct ReaderView: View {
     @State private var lineSpacingScale: CGFloat = 1
     private let fallbackTitle: String
 
-    init(fileID: UUID, fallbackTitle: String, repository: any ReaderRepository) {
+    init(
+        fileID: UUID,
+        fallbackTitle: String,
+        initialPage: Int? = nil,
+        repository: any ReaderRepository
+    ) {
         self.fallbackTitle = fallbackTitle
-        _model = StateObject(wrappedValue: ReaderViewModel(fileID: fileID, repository: repository))
+        _model = StateObject(
+            wrappedValue: ReaderViewModel(
+                fileID: fileID,
+                initialPage: initialPage,
+                repository: repository
+            )
+        )
     }
 
     var body: some View {
@@ -203,7 +214,14 @@ struct ReaderView: View {
     }
 
     private var shareURL: URL {
-        URL(string: "https://berynda.org/read/\(model.fileID.uuidString.lowercased())")!
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "berynda.org"
+        components.path = "/read/\(model.fileID.uuidString.lowercased())"
+        if model.info?.renderingMode == .pdf {
+            components.queryItems = [URLQueryItem(name: "p", value: String(model.currentPage))]
+        }
+        return components.url!
     }
 }
 

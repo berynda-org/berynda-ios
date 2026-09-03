@@ -23,7 +23,11 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, minHeight: 36)
                     .background(BeryndaColor.deepAccent)
                     .accessibilityIdentifier("network.offline-banner")
-            }
+                }
+        }
+        .task { environment.consumePendingRoute() }
+        .onChange(of: environment.pendingRoute) { _, _ in
+            environment.consumePendingRoute()
         }
     }
 }
@@ -33,7 +37,7 @@ private struct PhoneRootView: View {
 
     var body: some View {
         TabView(selection: $environment.selectedTab) {
-            NavigationStack { CatalogView() }
+            CatalogNavigationView()
                 .tabItem { Label("Каталог", systemImage: "books.vertical") }
                 .tag(RootTab.catalog)
 
@@ -60,12 +64,13 @@ private struct TabletRootView: View {
             }
             .navigationTitle("Берында")
         } detail: {
-            NavigationStack {
-                switch environment.selectedTab {
-                case .catalog: CatalogView()
-                case .library: LibraryPlaceholderView()
-                case .profile: ProfilePlaceholderView()
-                }
+            switch environment.selectedTab {
+            case .catalog:
+                CatalogNavigationView()
+            case .library:
+                NavigationStack { LibraryPlaceholderView() }
+            case .profile:
+                NavigationStack { ProfilePlaceholderView() }
             }
         }
     }
@@ -79,5 +84,37 @@ private struct TabletRootView: View {
         }
         .buttonStyle(.plain)
         .listRowBackground(environment.selectedTab == tab ? BeryndaColor.surface : Color.clear)
+    }
+}
+
+private struct CatalogNavigationView: View {
+    @EnvironmentObject private var environment: AppEnvironment
+
+    var body: some View {
+        NavigationStack(path: $environment.catalogPath) {
+            CatalogView()
+                .navigationDestination(for: CatalogDestination.self) { destination in
+                    switch destination {
+                    case let .work(work):
+                        WorkDetailView(
+                            work: work,
+                            repository: environment.catalogRepository
+                        )
+                    case let .linkedWork(identifier):
+                        LinkedWorkView(
+                            identifier: identifier,
+                            repository: environment.catalogRepository
+                        )
+                    }
+                }
+        }
+        .fullScreenCover(item: $environment.presentedReader) { presentation in
+            ReaderView(
+                fileID: presentation.fileID,
+                fallbackTitle: presentation.fallbackTitle,
+                initialPage: presentation.initialPage,
+                repository: environment.readerRepository
+            )
+        }
     }
 }

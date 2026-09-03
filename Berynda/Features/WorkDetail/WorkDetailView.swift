@@ -113,6 +113,7 @@ private struct EditionRow: View {
                 }
             }
         }
+        .accessibilityIdentifier("work.edition.\(edition.id)")
     }
 
     private var metadata: String {

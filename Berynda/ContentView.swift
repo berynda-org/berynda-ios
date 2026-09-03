@@ -38,15 +38,24 @@ private struct PhoneRootView: View {
     var body: some View {
         TabView(selection: $environment.selectedTab) {
             CatalogNavigationView()
-                .tabItem { Label("Каталог", systemImage: "books.vertical") }
+                .tabItem {
+                    Label("Каталог", systemImage: "books.vertical")
+                        .accessibilityIdentifier("tab_catalog")
+                }
                 .tag(RootTab.catalog)
 
-            NavigationStack { LibraryPlaceholderView() }
-                .tabItem { Label("Бібліотека", systemImage: "bookmark") }
+            NavigationStack { LibraryUnavailableView() }
+                .tabItem {
+                    Label("Бібліотека", systemImage: "bookmark")
+                        .accessibilityIdentifier("tab_library")
+                }
                 .tag(RootTab.library)
 
-            NavigationStack { ProfilePlaceholderView() }
-                .tabItem { Label("Профіль", systemImage: "person.crop.circle") }
+            NavigationStack { AboutView() }
+                .tabItem {
+                    Label("Про застосунок", systemImage: "info.circle")
+                        .accessibilityIdentifier("tab_about")
+                }
                 .tag(RootTab.profile)
         }
     }
@@ -60,7 +69,7 @@ private struct TabletRootView: View {
             List {
                 sidebarButton("Каталог", systemImage: "books.vertical", tab: .catalog)
                 sidebarButton("Бібліотека", systemImage: "bookmark", tab: .library)
-                sidebarButton("Профіль", systemImage: "person.crop.circle", tab: .profile)
+                sidebarButton("Про застосунок", systemImage: "info.circle", tab: .profile)
             }
             .navigationTitle("Берында")
         } detail: {
@@ -68,9 +77,9 @@ private struct TabletRootView: View {
             case .catalog:
                 CatalogNavigationView()
             case .library:
-                NavigationStack { LibraryPlaceholderView() }
+                NavigationStack { LibraryUnavailableView() }
             case .profile:
-                NavigationStack { ProfilePlaceholderView() }
+                NavigationStack { AboutView() }
             }
         }
     }

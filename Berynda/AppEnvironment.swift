@@ -45,6 +45,21 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
+    #if DEBUG
+    static func uiTesting() -> AppEnvironment {
+        let repository = UITestRepository()
+        let session = SessionController(
+            tokenStore: UITestTokenStore(),
+            authentication: UITestAuthenticationService()
+        )
+        return AppEnvironment(
+            catalogRepository: repository,
+            readerRepository: repository,
+            session: session
+        )
+    }
+    #endif
+
     func open(_ url: URL) {
         guard let route = AppRoute(url: url) else { return }
         selectedTab = .catalog

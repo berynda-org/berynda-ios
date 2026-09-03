@@ -42,6 +42,7 @@ private struct CatalogLoadedView: View {
             .background(BeryndaColor.paper)
             .navigationTitle("Каталог")
             .searchable(text: $model.query, prompt: "Назва або автор")
+            .accessibilityIdentifier("catalog_screen")
             .onChange(of: model.query) { _, _ in model.searchChanged() }
             .task {
                 if case .idle = model.state { await model.load() }

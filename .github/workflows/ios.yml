@@ -40,3 +40,12 @@ jobs:
           -only-testing:BeryndaTests
           CODE_SIGNING_ALLOWED=NO
           test-without-building
+      - name: Run deterministic alpha UI journeys
+        run: >-
+          xcodebuild
+          -project Berynda.xcodeproj
+          -scheme Berynda
+          -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest'
+          -only-testing:BeryndaUITests
+          CODE_SIGNING_ALLOWED=NO
+          test-without-building

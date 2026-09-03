@@ -115,7 +115,8 @@ actor UITestRepository: CatalogRepository, ReaderRepository, LibraryRepository {
         positionValue: String?,
         pageNumber: Int?
     ) async throws -> BibliographyItem {
-        throw UITestFixtureError.unsupported
+        guard workID == Self.kobzarWorkID else { throw UITestFixtureError.unsupported }
+        return try decode(Self.quickAddedItem)
     }
 
     func publicCollections() async throws -> [PublicCollectionSummary] { [] }
@@ -151,6 +152,8 @@ private extension UITestRepository {
     static let noFileEdition = #"{"id":"cccccccc-3333-3333-3333-333333333333","work":"33333333-3333-3333-3333-333333333333","display_title":"Бібліографічний запис","language":"uk","year":1800,"publisher_name":null,"publication_place":null,"page_count":null,"readable_file_id":null,"can_read":false,"can_download":false,"restriction_reason":null}"#
 
     static let readerInfo = #"{"file_id":"44444444-4444-4444-4444-444444444444","edition_id":"aaaaaaaa-1111-1111-1111-111111111111","series_id":null,"work_id":"11111111-1111-1111-1111-111111111111","book":{"title":"Кобзар","subtitle":"Вибрані поезії","authors":["Тарас Шевченко"],"edition_year":1840,"publisher":"Друкарня Є. Фішера","publication_place":"Санкт-Петербург","cover_image_url":null},"mime_type":"application/pdf","file_size_bytes":1024,"rendering_mode":"pdf","page_delivery":"server_pages","pages_extracted":true,"split_pending":false,"split_failed":false,"total_pages":3,"has_toc":true,"toc":[{"id":"dddddddd-dddd-dddd-dddd-dddddddddddd","ordinal":1,"title":"Передмова","page_number":1,"anchor":null,"level":0,"work_id":"11111111-1111-1111-1111-111111111111","children":[]}],"reading_position":null,"rights":{"can_read":true,"can_download_file":false,"can_download_page":false,"can_copy_text":false,"can_print":false,"can_share":false,"restriction_reason":null},"page_labels":[{"page":1,"label":"I","source":"print"},{"page":2,"label":"II","source":"print"},{"page":3,"label":"III","source":"print"}]}"#
+
+    static let quickAddedItem = #"{"id":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee","work":"11111111-1111-1111-1111-111111111111","work_title":"Кобзар","work_slug":"kobzar","edition":null,"edition_year":null,"edition_title":null,"file":null,"position_type":null,"position_value":null,"page_number":null,"note":""}"#
 }
 
 struct UITestTokenStore: TokenStore {

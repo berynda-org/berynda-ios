@@ -97,6 +97,27 @@ final class BeryndaUITests: XCTestCase {
         )
     }
 
+    func testSignInReturnsToPendingWorkSave() {
+        openWork(named: "Кобзар")
+        let save = app.buttons["work.quick-add"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5))
+        save.tap()
+
+        let email = app.textFields["auth.email"]
+        let password = app.secureTextFields["auth.password"]
+        XCTAssertTrue(email.waitForExistence(timeout: 5))
+        email.tap()
+        email.typeText("reader@example.org")
+        password.tap()
+        password.typeText("password123")
+        app.buttons["auth.submit"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Твір додано до бібліографічного списку."]
+                .waitForExistence(timeout: 8)
+        )
+    }
+
     private func openWork(named title: String) {
         let work = app.staticTexts[title]
         XCTAssertTrue(work.waitForExistence(timeout: 5))

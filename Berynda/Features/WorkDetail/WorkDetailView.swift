@@ -16,17 +16,28 @@ struct WorkDetailView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(work.title)
-                        .font(.system(.largeTitle, design: .serif, weight: .bold))
-                        .foregroundStyle(BeryndaColor.ink)
-                    if let subtitle = work.subtitle {
-                        Text(subtitle).font(.title3).foregroundStyle(BeryndaColor.mutedInk)
+                HStack(alignment: .top, spacing: BeryndaSpacing.standard) {
+                    BeryndaBookCover(
+                        title: work.title,
+                        glyph: work.coverGlyph,
+                        tone: work.coverTone,
+                        width: 88,
+                        height: 128
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(work.title)
+                            .font(.system(.largeTitle, design: .serif, weight: .bold))
+                            .foregroundStyle(BeryndaColor.ink)
+                        if let subtitle = work.subtitle {
+                            Text(subtitle).font(.title3).foregroundStyle(BeryndaColor.mutedInk)
+                        }
+                        if !work.authors.isEmpty {
+                            Text(work.authors.map(\.displayName).joined(separator: ", "))
+                                .foregroundStyle(BeryndaColor.accent)
+                        }
                     }
-                    if !work.authors.isEmpty {
-                        Text(work.authors.map(\.displayName).joined(separator: ", "))
-                            .foregroundStyle(BeryndaColor.accent)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 Text("Видання")
@@ -34,7 +45,8 @@ struct WorkDetailView: View {
 
                 switch model.state {
                 case .loading:
-                    ProgressView()
+                    BeryndaLoadingState(message: "Завантажуємо видання…")
+                        .frame(minHeight: 180)
                 case let .loaded(editions) where editions.isEmpty:
                     BeryndaEmptyState(
                         title: "Видань ще немає",
@@ -51,12 +63,12 @@ struct WorkDetailView: View {
                         }
                     }
                 case let .failed(message):
-                    BeryndaPanel {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(message).foregroundStyle(BeryndaColor.mutedInk)
-                            Button("Спробувати ще раз") { Task { await model.load() } }
-                        }
-                    }
+                    BeryndaErrorState(
+                        title: "Не вдалося завантажити видання",
+                        message: message,
+                        retry: { Task { await model.load() } }
+                    )
+                    .frame(minHeight: 240)
                 }
             }
             .padding(20)

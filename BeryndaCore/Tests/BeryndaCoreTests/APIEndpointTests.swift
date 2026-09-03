@@ -44,6 +44,19 @@ final class APIEndpointTests: XCTestCase {
         )
     }
 
+    func testWorksSearchUsesTheCatalogPrefixFilterAndPage() throws {
+        let url = try XCTUnwrap(
+            APIEndpoint.works(search: "  Енеїда  ", page: 3).url(relativeTo: baseURL)
+        )
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) })
+
+        XCTAssertEqual(components.path, "/api/v1/works/")
+        XCTAssertEqual(query["page"]!, "3")
+        XCTAssertEqual(query["q"]!, "  Енеїда  ")
+        XCTAssertNil(query["search"])
+    }
+
     func testWorkIdentifierCannotInjectAnotherPathSegment() throws {
         let url = try XCTUnwrap(
             APIEndpoint.work(slug: "folder/name%2Fchild").url(relativeTo: baseURL)

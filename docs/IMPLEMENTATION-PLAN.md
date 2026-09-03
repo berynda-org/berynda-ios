@@ -1,6 +1,6 @@
 # Berynda iOS implementation plan
 
-Status: testable anonymous vertical slice with live search, catalog pagination, work/edition flow, core document renderers, macOS build and app-test gates, transport hardening, session foundation, and app-side navigation implemented; product and TestFlight slices remain
+Status: testable anonymous vertical slice implemented; Apple identifiers are registered; internal TestFlight, personal features, resilience, accessibility, and release work remain
 Written: 30 August 2026
 Implementation target: this native SwiftUI repository
 Reference architecture: `D:/lexykon/client/ios`
@@ -50,7 +50,7 @@ The Windows workspace cannot compile Xcode targets. The workflow in
 `.github/workflows/ios.yml` is the authoritative clean macOS build gate and
 runs on pushes to `main` and through manual dispatch.
 
-## 0. Current implementation audit (2 September 2026)
+## 0. Current implementation audit (3 September 2026)
 
 This status is based on the code in this repository, not on the original sequencing
 below. Some document work planned for Phase 5 was deliberately pulled forward
@@ -80,6 +80,112 @@ of its later features exists.
   Dynamic Type-aware TXT/Markdown size and line-spacing controls; and
 - backend mobile/reader contract suite passing locally (38 tests). Pure Swift
   navigation tests are present but require the macOS build gate to execute.
+- final Apple team and explicit Bundle ID `org.berynda.ios`, Associated Domains
+  capability, and App Store Connect application record `6808289031` are
+  registered. Signing credentials, automated archive upload, and TestFlight
+  distribution are not configured yet.
+
+### Authoritative remaining plan
+
+The dedicated `akrivonos/berynda-ios` repository is the canonical native-client
+source. The older untracked `ios/` mirror in the web/backend checkout must not
+receive further client changes; remove it after confirming that no unique work
+remains, or replace it with a short pointer to this repository. Backend mobile
+contracts and the production association file remain in `akrivonos/berynda`.
+
+Delivery is split into four acceptance milestones. Items inside each milestone
+are ordered by dependency and user value.
+
+#### Milestone A — internal TestFlight alpha
+
+Goal: let the product owner install the app and exercise the anonymous core
+journey on a real iPhone and iPad.
+
+1. Push the pending canonical-production-URL commit and keep package, simulator,
+   and app-unit gates green.
+2. Add production app icon and launch assets; remove unfinished-looking dead
+   ends from the reachable alpha UI while Library and account features remain
+   explicitly unavailable.
+3. Add deterministic UI journeys for launch, Ukrainian search, pagination,
+   work/edition opening, restricted/no-file handling, and a reader page turn.
+4. Deploy and verify the `berynda.org` association file against the registered
+   application identifier and test both work and reader universal links.
+5. Create the distribution/API credentials, add encrypted GitHub secrets,
+   archive the Release target, retain its dSYM, and upload it to internal
+   TestFlight. Complete only the TestFlight compliance fields needed to install
+   the build.
+6. Run a short real-device acceptance pass and convert every crash, blocked core
+   journey, data leak, or rights failure into a release-blocking issue.
+
+#### Milestone B — feature-complete beta
+
+Goal: complete the user-facing v1.0 product rather than merely the anonymous
+reader demo.
+
+1. Finish work/edition presentation: richer bibliography and rights summaries,
+   collection links, removed/restricted/empty/retry states, stable covers, and
+   true selected-work columns on iPad.
+2. Add authentication UI for login, registration confirmation, password reset,
+   logout, session expiry, relaunch persistence, and return-to-action behavior.
+3. Implement reading-position persistence: quiet-interval PUT, background and
+   dismiss flush, privacy-disabled handling, local resume, and restart tests.
+4. Replace the Library placeholder with Continue Reading, bibliography lists,
+   quick add, list-item reader bookmarks, and saved public collections with
+   duplicate-safe reconciliation.
+5. Replace the Profile placeholder with account editing, language, appearance,
+   reading-history privacy, storage management, logout, and local-resume cleanup.
+6. Complete catalog discovery: readable/filter controls, featured collections,
+   recommendations, saved collections, and recently viewed fallback.
+
+#### Milestone C — reader, offline, and inclusive-quality hardening
+
+Goal: make long reading sessions predictable on supported devices and under
+poor connectivity.
+
+1. Cap adjacent prefetch at two pages, bound decoded image/PDF caches, cancel
+   obsolete work, recover across lifecycle transitions, and pass a 200-page
+   memory/turn test.
+2. Add persistent appearance settings, TXT paged/anchor navigation, native
+   publication TOC/location and appearance controls, rights-aware download and
+   print, exact resume interoperability, and iPad landscape spread mode.
+3. Add a versioned, locale-isolated recently-viewed/document cache with
+   corruption recovery, rights revalidation, and safe eviction. Permanent
+   offline downloads are deferred to v1.1; v1.0 provides only bounded cache.
+4. Move all user-facing strings into Ukrainian/English String Catalogs and pass
+   pseudolocalization, VoiceOver order, 44-point targets, Dynamic Type, Reduce
+   Motion, increased contrast, keyboard navigation, and narrow-screen audits.
+5. Finish visual comparison with the approved HTML mockups on representative
+   iPhone and iPad sizes, in light and dark appearances.
+
+#### Milestone D — release candidate and App Store submission
+
+Goal: produce an auditable v1.0 build that is ready for external beta and App
+Review.
+
+1. Add signed minimum/latest-build and maintenance configuration with safe
+   caching plus forced-update and maintenance screens.
+2. Expand CI to URLProtocol integration, full XCUITest journeys, staging
+   contracts, performance/leak checks, and oldest/newest supported OS, iPhone,
+   and iPad coverage.
+3. Complete App Store description, keywords, support/privacy URLs, screenshots,
+   age rating, export compliance, and privacy answers; then stage external
+   TestFlight testing.
+4. Audit the privacy manifest, transitive licenses, authentication storage,
+   URLs, caches, document paths, logs, rights gates, universal links, archive
+   provenance, and dSYM retention. Resolve every critical/high security issue
+   and accessibility blocker.
+5. Obtain product-owner sign-off against the HTML prototype and promote the
+   accepted build to App Review.
+
+### Explicitly deferred beyond v1.0
+
+- permanent offline downloads;
+- OCR/full-text scan search and text overlays;
+- annotations beyond bibliography list items;
+- TTS/autoplay and advanced page-turn effects;
+- widgets, extensions, App Clips, and Handoff;
+- social login; and
+- any user-selectable file representation.
 
 ### Delivery slices, in order
 
@@ -152,11 +258,13 @@ of its later features exists.
 17. **Product configuration:** signed/static minimum/latest build, App Store
     URL and maintenance state, forced-update/maintenance screens, and safe
     configuration caching.
-18. **Release/security hardening:** app icon and launch assets, screenshots and
-    metadata, Apple team/signing/TestFlight setup, production universal-link
-    verification, privacy answers, transitive-license audit, archive/dSYM
-    retention, final URL/auth/cache/log/rights review, and remediation of every
-    critical/high or accessibility-blocking finding.
+18. **Release/security hardening — Apple registration partial:** the Apple team,
+    explicit Bundle ID, Associated Domains capability, and App Store Connect app
+    record are complete. App icon and launch assets, signing credentials,
+    signed archive/TestFlight upload, screenshots and metadata, production
+    universal-link verification, privacy answers, transitive-license audit,
+    archive/dSYM retention, final URL/auth/cache/log/rights review, and
+    remediation of every critical/high or accessibility-blocking finding remain.
 
 Post-MVP items remain the features in section 13: OCR/full-text scan search,
 text overlays, annotations beyond list items, TTS/autoplay, advanced page-turn

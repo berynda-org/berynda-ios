@@ -89,7 +89,7 @@ final class BeryndaUITests: XCTestCase {
         password.typeText("password123")
         app.buttons["auth.submit"].tap()
 
-        XCTAssertTrue(app.staticTexts["Тестовий читач"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Редагувати профіль"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Бібліотека"].tap()
         XCTAssertTrue(app.staticTexts["Продовжити читання"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Відкрийте видання — воно з’явиться тут."].exists)

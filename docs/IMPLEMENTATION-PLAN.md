@@ -101,21 +101,29 @@ are ordered by dependency and user value.
 Goal: let the product owner install the app and exercise the anonymous core
 journey on a real iPhone and iPad.
 
-1. Push the pending canonical-production-URL commit and keep package, simulator,
-   and app-unit gates green.
-2. Add production app icon and launch assets; remove unfinished-looking dead
-   ends from the reachable alpha UI while Library and account features remain
-   explicitly unavailable.
-3. Add deterministic UI journeys for launch, Ukrainian search, pagination,
-   work/edition opening, restricted/no-file handling, and a reader page turn.
-4. Deploy and verify the `berynda.org` association file against the registered
-   application identifier and test both work and reader universal links.
-5. Create the distribution/API credentials, add encrypted GitHub secrets,
-   archive the Release target, retain its dSYM, and upload it to internal
-   TestFlight. Complete only the TestFlight compliance fields needed to install
-   the build.
-6. Run a short real-device acceptance pass and convert every crash, blocked core
-   journey, data leak, or rights failure into a release-blocking issue.
+Status on 2026-09-03:
+
+1. **Complete.** The canonical production URL is committed. Package, unsigned
+   app/test compilation, app-unit, and simulator gates pass in GitHub Actions
+   (`iOS` run 16, commit `4d362d3`).
+2. **Complete.** The production icon and launch presentation are in place.
+   Reachable Library and account dead ends now explain their alpha status
+   without fake or non-working actions.
+3. **Complete.** Six deterministic UI journeys cover launch, Ukrainian search,
+   pagination, work/edition opening and page turning, restricted reading, and
+   missing-file behavior. They pass on the iPhone 16 Pro simulator in CI.
+4. **In progress.** The association file for
+   `KHMPLP3CXQ.org.berynda.ios` is committed in the web repository with work and
+   reader routes. Production deployment and live universal-link verification
+   remain required; the live endpoint still returned HTTP 404 before the
+   deployment run started.
+5. **In progress.** The Release archive, validation, dSYM retention, and upload
+   workflow is committed. A Berynda-specific distribution certificate,
+   provisioning profile, least-privilege App Store Connect key, encrypted
+   GitHub secrets, and the first successful TestFlight upload remain required.
+6. **Pending.** Run the real-device acceptance pass after the TestFlight build
+   becomes installable and treat any crash, blocked core journey, data leak, or
+   rights failure as release-blocking.
 
 #### Milestone B — feature-complete beta
 

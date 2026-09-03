@@ -2,7 +2,7 @@ import BeryndaCore
 import Foundation
 
 #if DEBUG
-actor UITestRepository: CatalogRepository, ReaderRepository {
+actor UITestRepository: CatalogRepository, ReaderRepository, LibraryRepository {
     private let decoder = JSONDecoder()
 
     func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
@@ -90,6 +90,38 @@ actor UITestRepository: CatalogRepository, ReaderRepository {
         )!
     }
 
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool { true }
+
+    func continueReading(limit: Int) async throws -> ContinueReadingResponse {
+        ContinueReadingResponse(recentlyRead: [], historyEnabled: true)
+    }
+
+    func bibliographyLists() async throws -> [BibliographyList] { [] }
+
+    func createList(title: String) async throws -> BibliographyList {
+        throw UITestFixtureError.unsupported
+    }
+
+    func quickAdd(
+        workID: UUID?,
+        fileID: UUID?,
+        positionType: String?,
+        positionValue: String?,
+        pageNumber: Int?
+    ) async throws -> BibliographyItem {
+        throw UITestFixtureError.unsupported
+    }
+
+    func publicCollections() async throws -> [PublicCollectionSummary] { [] }
+    func savedCollections() async throws -> [PublicCollectionSummary] { [] }
+    func setCollectionSaved(slug: String, saved: Bool) async throws {}
+
     private func decode<Value: Decodable>(_ json: String) throws -> Value {
         try decoder.decode(Value.self, from: Data(json.utf8))
     }
@@ -129,14 +161,60 @@ struct UITestTokenStore: TokenStore {
 
 actor UITestAuthenticationService: AuthenticationServing {
     func login(email: String, password: String) async throws -> AuthSession {
-        throw UITestFixtureError.unsupported
+        guard email == "reader@example.org", password == "password123" else {
+            throw SessionError.invalidCredentials
+        }
+        return AuthSession(
+            tokens: try AuthTokens(
+                access: "header.ui-access.signature",
+                refresh: "header.ui-refresh.signature"
+            ),
+            user: UserProfile(
+                id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+                email: email,
+                displayName: "Тестовий читач"
+            )
+        )
     }
+
+    func register(email: String, password: String, displayName: String) async throws -> RegistrationResult {
+        RegistrationResult(
+            id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+            email: email,
+            activation: "email_confirmation_required"
+        )
+    }
+
+    func requestPasswordReset(email: String) async throws {}
 
     func refresh(refreshToken: String) async throws -> AuthTokens {
         throw UITestFixtureError.unsupported
     }
 
     func logout(accessToken: String, refreshToken: String) async throws {}
+}
+
+actor UITestAccountRepository: AccountRepository {
+    private var user = UserProfile(
+        id: UUID(uuidString: "99999999-9999-9999-9999-999999999999")!,
+        email: "reader@example.org",
+        displayName: "Тестовий читач"
+    )
+
+    func profile() async throws -> UserProfile { user }
+
+    func updateProfile(_ update: ProfileUpdate) async throws -> UserProfile {
+        user = UserProfile(
+            id: user.id,
+            email: user.email,
+            displayName: update.displayName ?? user.displayName,
+            bio: update.bio ?? user.bio,
+            institutionName: update.institutionName ?? user.institutionName,
+            uiLanguage: update.uiLanguage ?? user.uiLanguage,
+            privacySettings: update.privacySettings ?? user.privacySettings
+        )
+        return user
+    }
 }
 
 private enum UITestFixtureError: LocalizedError {

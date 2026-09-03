@@ -74,6 +74,27 @@ final class BeryndaUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Читати видання"].exists)
     }
 
+    func testSignInUnlocksProfileAndLibrary() {
+        app.tabBars.buttons["Профіль"].tap()
+        let authenticate = app.buttons["profile.authenticate"]
+        XCTAssertTrue(authenticate.waitForExistence(timeout: 5))
+        authenticate.tap()
+
+        let email = app.textFields["auth.email"]
+        let password = app.secureTextFields["auth.password"]
+        XCTAssertTrue(email.waitForExistence(timeout: 5))
+        email.tap()
+        email.typeText("reader@example.org")
+        password.tap()
+        password.typeText("password123")
+        app.buttons["auth.submit"].tap()
+
+        XCTAssertTrue(app.staticTexts["Тестовий читач"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Бібліотека"].tap()
+        XCTAssertTrue(app.staticTexts["Продовжити читання"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Відкрийте видання — воно з’явиться тут."].exists)
+    }
+
     private func openWork(named title: String) {
         let work = app.staticTexts[title]
         XCTAssertTrue(work.waitForExistence(timeout: 5))

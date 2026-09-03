@@ -57,6 +57,24 @@ final class APIEndpointTests: XCTestCase {
         XCTAssertNil(query["search"])
     }
 
+    func testFilteredWorksUsesSupportedBackendParameters() throws {
+        let url = try XCTUnwrap(
+            APIEndpoint.worksFiltered(
+                search: "Кобзар",
+                page: 2,
+                readableOnly: true,
+                language: "uk"
+            ).url(relativeTo: baseURL)
+        )
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) })
+
+        XCTAssertEqual(query["q"]!, "Кобзар")
+        XCTAssertEqual(query["page"]!, "2")
+        XCTAssertEqual(query["has_text"]!, "true")
+        XCTAssertEqual(query["language"]!, "uk")
+    }
+
     func testWorkIdentifierCannotInjectAnotherPathSegment() throws {
         let url = try XCTUnwrap(
             APIEndpoint.work(slug: "folder/name%2Fchild").url(relativeTo: baseURL)

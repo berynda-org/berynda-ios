@@ -188,6 +188,40 @@ final class AuthenticationServiceTests: XCTestCase {
         }
     }
 
+    func testRegistrationAndPasswordResetUseNativeJSONContracts() async throws {
+        let registration = Data(
+            #"{"id":"11111111-1111-1111-1111-111111111111","email":"reader@example.org","activation":"email_confirmation_required"}"#.utf8
+        )
+        let transport = AuthTransportStub([
+            AuthStubResponse(status: 201, data: registration, headers: ["Content-Type": "application/json"]),
+            AuthStubResponse(status: 200, data: Data(#"{"status":"ok"}"#.utf8), headers: ["Content-Type": "application/json"]),
+        ])
+        let service = LiveAuthenticationService(
+            baseURL: URL(string: "https://berynda.org/api/v1/")!,
+            transport: transport
+        )
+
+        let result = try await service.register(
+            email: " reader@example.org ",
+            password: "password123",
+            displayName: " Читач "
+        )
+        try await service.requestPasswordReset(email: " reader@example.org ")
+
+        XCTAssertTrue(result.requiresEmailConfirmation)
+        let requests = await transport.recordedRequests()
+        XCTAssertEqual(requests.map { $0.url?.path }, [
+            "/api/v1/auth/register/",
+            "/api/v1/auth/password-reset/",
+        ])
+        let registrationBody = try jsonObject(requests[0].body)
+        XCTAssertEqual(registrationBody["email"] as? String, "reader@example.org")
+        XCTAssertEqual(registrationBody["display_name"] as? String, "Читач")
+        XCTAssertEqual(registrationBody["password"] as? String, "password123")
+        let resetBody = try jsonObject(requests[1].body)
+        XCTAssertEqual(resetBody["email"] as? String, "reader@example.org")
+    }
+
     private func jsonObject(_ data: Data?) throws -> [String: Any] {
         let data = try XCTUnwrap(data)
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

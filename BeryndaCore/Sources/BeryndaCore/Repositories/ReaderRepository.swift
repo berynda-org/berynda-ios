@@ -7,6 +7,39 @@ public protocol ReaderRepository: Sendable {
     func fullDocument(fileID: UUID) async throws -> Data
     func pagePDF(fileID: UUID, page: Int) async throws -> Data
     func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool
+}
+
+public struct ReadingPositionUpdate: Encodable, Sendable, Equatable {
+    public let positionType: String
+    public let positionValue: String
+    public let progressPercent: Int?
+    public let totalPages: Int?
+
+    public init(
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) {
+        self.positionType = positionType
+        self.positionValue = positionValue
+        self.progressPercent = progressPercent
+        self.totalPages = totalPages
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case positionType = "position_type"
+        case positionValue = "position_value"
+        case progressPercent = "progress_percent"
+        case totalPages = "total_pages"
+    }
 }
 
 public actor LiveReaderRepository: ReaderRepository {
@@ -91,6 +124,26 @@ public actor LiveReaderRepository: ReaderRepository {
         return payload.data
     }
 
+    public func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool {
+        let response: ReadingPositionSaveResponse = try await client.request(
+            .readingPosition(fileID: fileID),
+            method: .put,
+            body: ReadingPositionUpdate(
+                positionType: positionType,
+                positionValue: positionValue,
+                progressPercent: progressPercent,
+                totalPages: totalPages
+            )
+        )
+        return response.recorded ?? true
+    }
+
     private func validate(_ payload: HTTPPayload, accepted: Set<String>, maxBytes: Int) throws {
         guard let contentType = payload.contentType, accepted.contains(contentType) else {
             throw APIError.unsupportedContentType(payload.contentType)
@@ -106,4 +159,8 @@ public actor LiveReaderRepository: ReaderRepository {
             throw APIError.responseTooLarge
         }
     }
+}
+
+private struct ReadingPositionSaveResponse: Decodable, Sendable {
+    let recorded: Bool?
 }

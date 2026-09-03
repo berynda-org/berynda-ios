@@ -3,6 +3,14 @@ import Foundation
 import FoundationNetworking
 #endif
 
+public enum APIRequestMethod: String, Sendable {
+    case get = "GET"
+    case post = "POST"
+    case put = "PUT"
+    case patch = "PATCH"
+    case delete = "DELETE"
+}
+
 public actor BeryndaAPIClient {
     private let baseURL: URL
     private let transport: any HTTPTransport
@@ -55,10 +63,74 @@ public actor BeryndaAPIClient {
         }
     }
 
+    public func request<Response: Decodable & Sendable, Body: Encodable & Sendable>(
+        _ endpoint: APIEndpoint,
+        method: APIRequestMethod,
+        body: Body,
+        as type: Response.Type = Response.self
+    ) async throws -> Response {
+        let encoded: Data
+        do {
+            encoded = try JSONEncoder().encode(body)
+        } catch {
+            throw APIError.invalidConfiguration
+        }
+        guard encoded.count <= 1 * 1_024 * 1_024 else {
+            throw APIError.responseTooLarge
+        }
+        let payload = try await performData(
+            endpoint,
+            method: method,
+            body: encoded,
+            accept: "application/json",
+            maximumBytes: 5 * 1_024 * 1_024
+        )
+        guard payload.contentType == "application/json"
+                || payload.contentType?.hasSuffix("+json") == true
+        else {
+            throw APIError.unsupportedContentType(payload.contentType)
+        }
+        do {
+            return try decoder.decode(Response.self, from: payload.data)
+        } catch {
+            throw APIError.decoding
+        }
+    }
+
+    @discardableResult
+    public func send(
+        _ endpoint: APIEndpoint,
+        method: APIRequestMethod
+    ) async throws -> HTTPPayload {
+        try await performData(
+            endpoint,
+            method: method,
+            body: nil,
+            accept: "application/json",
+            maximumBytes: 1 * 1_024 * 1_024
+        )
+    }
+
     public func data(
         _ endpoint: APIEndpoint,
         accept: String = "*/*",
         maximumBytes: Int = 5 * 1_024 * 1_024
+    ) async throws -> HTTPPayload {
+        try await performData(
+            endpoint,
+            method: .get,
+            body: nil,
+            accept: accept,
+            maximumBytes: maximumBytes
+        )
+    }
+
+    private func performData(
+        _ endpoint: APIEndpoint,
+        method: APIRequestMethod,
+        body: Data?,
+        accept: String,
+        maximumBytes: Int
     ) async throws -> HTTPPayload {
         guard let url = endpoint.url(relativeTo: baseURL) else {
             throw APIError.invalidConfiguration
@@ -66,9 +138,13 @@ public actor BeryndaAPIClient {
         guard maximumBytes > 0 else { throw APIError.invalidConfiguration }
 
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method.rawValue
+        request.httpBody = body
         request.timeoutInterval = 30
         request.setValue(accept, forHTTPHeaderField: "Accept")
+        if body != nil {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         request.setValue(language(), forHTTPHeaderField: "Accept-Language")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-ID")
 
@@ -107,7 +183,8 @@ public actor BeryndaAPIClient {
                 throw APIError.responseTooLarge
             }
 
-            if response.statusCode == 429 || Self.retryableServerStatuses.contains(response.statusCode),
+            if (response.statusCode == 429 || Self.retryableServerStatuses.contains(response.statusCode)),
+               method == .get || method == .put || method == .delete,
                attempt < retryPolicy.maximumAttempts {
                 let retryAfter = response.statusCode == 429 ? parseRetryAfter(response) : nil
                 let delay = retryPolicy.delay(

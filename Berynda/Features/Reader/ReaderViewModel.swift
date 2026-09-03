@@ -35,15 +35,32 @@ final class ReaderViewModel: ObservableObject {
     let fileID: UUID
     private let initialPage: Int?
     private let repository: any ReaderRepository
+    private let session: SessionController
+    private let account: AccountViewModel
+    private let localPositions: LocalReadingPositionStore
     private var pageTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
 
-    init(fileID: UUID, initialPage: Int? = nil, repository: any ReaderRepository) {
+    init(
+        fileID: UUID,
+        initialPage: Int? = nil,
+        repository: any ReaderRepository,
+        session: SessionController,
+        account: AccountViewModel,
+        localPositions: LocalReadingPositionStore
+    ) {
         self.fileID = fileID
         self.initialPage = initialPage
         self.repository = repository
+        self.session = session
+        self.account = account
+        self.localPositions = localPositions
     }
 
-    deinit { pageTask?.cancel() }
+    deinit {
+        pageTask?.cancel()
+        saveTask?.cancel()
+    }
 
     func load() async {
         phase = .loading
@@ -59,7 +76,8 @@ final class ReaderViewModel: ObservableObject {
             }
 
             info = readerInfo
-            currentPage = restoredPage(from: readerInfo)
+            let local = await localPositions.position(for: fileID)
+            currentPage = restoredPage(from: readerInfo, local: local)
             try await loadContent(for: readerInfo)
             phase = .loaded
         } catch is CancellationError {
@@ -75,6 +93,7 @@ final class ReaderViewModel: ObservableObject {
         let bounded = min(max(page, 1), upperBound)
         guard bounded != currentPage else { return }
         currentPage = bounded
+        schedulePositionSave()
 
         guard info.renderingMode == .pdf, info.resource != .fullPDF else { return }
         pageTask?.cancel()
@@ -101,6 +120,12 @@ final class ReaderViewModel: ObservableObject {
 
     func pageLabel(for page: Int) -> String? {
         ReaderNavigation.pageLabel(for: page, in: info?.pageLabels ?? [])
+    }
+
+    func flushPosition() async {
+        saveTask?.cancel()
+        saveTask = nil
+        await persistPosition()
     }
 
     private func loadContent(for info: ReaderInfo) async throws {
@@ -161,15 +186,51 @@ final class ReaderViewModel: ObservableObject {
         }
     }
 
-    private func restoredPage(from info: ReaderInfo) -> Int {
+    private func restoredPage(from info: ReaderInfo, local: LocalReadingPosition?) -> Int {
         if let initialPage {
             return min(max(initialPage, 1), max(info.totalPages ?? initialPage, 1))
         }
-        guard info.readingPosition?.positionType == "page",
-              let raw = info.readingPosition?.positionValue,
-              let page = Int(raw)
-        else { return 1 }
+        let remotePage = info.readingPosition?.positionType == "page"
+            ? info.readingPosition?.positionValue.flatMap(Int.init)
+            : nil
+        let page = remotePage ?? local?.page ?? 1
         return min(max(page, 1), max(info.totalPages ?? page, 1))
+    }
+
+    private func schedulePositionSave() {
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await self?.persistPosition()
+        }
+    }
+
+    private func persistPosition() async {
+        guard let info, phase.isLoaded else { return }
+        guard account.profile?.readingHistoryEnabled != false else {
+            await localPositions.clearAll()
+            return
+        }
+        let page = currentPage
+        let total = info.totalPages
+        await localPositions.save(page: page, totalPages: total, for: fileID)
+        guard await session.state() == .authenticated else { return }
+        let progress = total.map { min(max(Int((Double(page) / Double(max($0, 1)) * 100).rounded()), 0), 100) }
+        _ = try? await repository.savePosition(
+            fileID: fileID,
+            positionType: "page",
+            positionValue: String(page),
+            progressPercent: progress,
+            totalPages: total
+        )
+    }
+}
+
+private extension ReaderViewModel.Phase {
+    var isLoaded: Bool {
+        if case .loaded = self { return true }
+        return false
     }
 }
 

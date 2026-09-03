@@ -118,9 +118,11 @@ Status on 2026-09-03:
    remain required; the live endpoint still returned HTTP 404 before the
    deployment run started.
 5. **In progress.** The Release archive, validation, dSYM retention, and upload
-   workflow is committed. A Berynda-specific distribution certificate,
-   provisioning profile, least-privilege App Store Connect key, encrypted
-   GitHub secrets, and the first successful TestFlight upload remain required.
+   workflow is committed. A Berynda-specific distribution certificate and
+   active `Berynda App Store` provisioning profile now exist and the local
+   password-protected signing package has been validated. A least-privilege
+   App Store Connect key, encrypted GitHub secrets, and the first successful
+   TestFlight upload remain required.
 6. **Pending.** Run the real-device acceptance pass after the TestFlight build
    becomes installable and treat any crash, blocked core journey, data leak, or
    rights failure as release-blocking.
@@ -129,6 +131,14 @@ Status on 2026-09-03:
 
 Goal: complete the user-facing v1.0 product rather than merely the anonymous
 reader demo.
+
+Status on 2026-09-03: implementation is in progress. The first beta slice adds
+native sign-in/registration/password-recovery UI, Keychain-backed relaunch
+restoration, profile editing, language/appearance/privacy controls, local and
+server reading-position persistence, Continue Reading, bibliography lists,
+duplicate-aware quick add and reader bookmarks, saved/featured collections,
+catalog readability/language filters, and a selected-work column on iPad.
+These changes require a green macOS CI run before the slice is accepted.
 
 1. Finish work/edition presentation: richer bibliography and rights summaries,
    collection links, removed/restricted/empty/retry states, stable covers, and

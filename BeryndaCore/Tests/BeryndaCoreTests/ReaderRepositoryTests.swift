@@ -109,6 +109,32 @@ final class ReaderRepositoryTests: XCTestCase {
         XCTAssertEqual(data, Data([0xff, 0xd8, 0xff]))
     }
 
+    func testReadingPositionUsesIdempotentPutAndPrivacyResponse() async throws {
+        let repository = repository { request in
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+            let body = try XCTUnwrap(request.httpBody)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+            XCTAssertEqual(json["position_type"] as? String, "page")
+            XCTAssertEqual(json["position_value"] as? String, "7")
+            XCTAssertEqual(json["progress_percent"] as? Int, 35)
+            return (
+                Data(#"{"position":null,"recorded":false}"#.utf8),
+                Self.response(request, contentType: "application/json")
+            )
+        }
+
+        let recorded = try await repository.savePosition(
+            fileID: fileID,
+            positionType: "page",
+            positionValue: "7",
+            progressPercent: 35,
+            totalPages: 20
+        )
+
+        XCTAssertFalse(recorded)
+    }
+
     private func repository(
         handler: @escaping @Sendable (URLRequest) throws -> (Data, HTTPURLResponse)
     ) -> LiveReaderRepository {

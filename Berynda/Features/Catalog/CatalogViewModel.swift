@@ -15,6 +15,8 @@ final class CatalogViewModel: ObservableObject {
     @Published private(set) var isLoadingNextPage = false
     @Published private(set) var nextPageError: String?
     @Published var query = ""
+    @Published var readableOnly = false
+    @Published var languageFilter: String?
     private let repository: any CatalogRepository
     private var searchTask: Task<Void, Never>?
     private var currentPage = 0
@@ -35,7 +37,12 @@ final class CatalogViewModel: ObservableObject {
         nextPageError = nil
         state = .loading
         do {
-            let page = try await repository.works(search: requestedQuery, page: 1)
+            let page = try await repository.works(
+                search: requestedQuery,
+                page: 1,
+                readableOnly: readableOnly,
+                language: languageFilter
+            )
             guard generation == loadGeneration, requestedQuery == query.nilIfBlank else { return }
             currentPage = 1
             hasNextPage = page.next != nil && page.results.count < page.count
@@ -65,7 +72,12 @@ final class CatalogViewModel: ObservableObject {
         }
 
         do {
-            let page = try await repository.works(search: requestedQuery, page: requestedPage)
+            let page = try await repository.works(
+                search: requestedQuery,
+                page: requestedPage,
+                readableOnly: readableOnly,
+                language: languageFilter
+            )
             guard generation == loadGeneration, requestedQuery == query.nilIfBlank else { return }
             let knownIDs = Set(works.map(\.id))
             let newWorks = page.results.filter { !knownIDs.contains($0.id) }

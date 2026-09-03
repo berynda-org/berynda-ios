@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var networkMonitor: NetworkMonitor
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @AppStorage("appearance.mode") private var appearanceMode = "system"
 
     var body: some View {
         Group {
@@ -14,6 +15,7 @@ struct ContentView: View {
             }
         }
         .background(BeryndaColor.paper.ignoresSafeArea())
+        .preferredColorScheme(preferredColorScheme)
         .safeAreaInset(edge: .top, spacing: 0) {
             if networkMonitor.status == .offline {
                 Label("Немає з’єднання з мережею", systemImage: "wifi.slash")
@@ -28,6 +30,15 @@ struct ContentView: View {
         .task { environment.consumePendingRoute() }
         .onChange(of: environment.pendingRoute) { _, _ in
             environment.consumePendingRoute()
+        }
+        .task { await environment.account.restore() }
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": .light
+        case "dark": .dark
+        default: nil
         }
     }
 }
@@ -44,17 +55,17 @@ private struct PhoneRootView: View {
                 }
                 .tag(RootTab.catalog)
 
-            NavigationStack { LibraryUnavailableView() }
+            NavigationStack { LibraryView() }
                 .tabItem {
                     Label("Бібліотека", systemImage: "bookmark")
                         .accessibilityIdentifier("tab_library")
                 }
                 .tag(RootTab.library)
 
-            NavigationStack { AboutView() }
+            NavigationStack { ProfileView() }
                 .tabItem {
-                    Label("Про застосунок", systemImage: "info.circle")
-                        .accessibilityIdentifier("tab_about")
+                    Label("Профіль", systemImage: "person.crop.circle")
+                        .accessibilityIdentifier("tab_profile")
                 }
                 .tag(RootTab.profile)
         }
@@ -69,17 +80,40 @@ private struct TabletRootView: View {
             List {
                 sidebarButton("Каталог", systemImage: "books.vertical", tab: .catalog)
                 sidebarButton("Бібліотека", systemImage: "bookmark", tab: .library)
-                sidebarButton("Про застосунок", systemImage: "info.circle", tab: .profile)
+                sidebarButton("Профіль", systemImage: "person.crop.circle", tab: .profile)
             }
             .navigationTitle("Берында")
+        } content: {
+            switch environment.selectedTab {
+            case .catalog:
+                TabletCatalogColumn(
+                    repository: environment.catalogRepository,
+                    selection: $environment.tabletCatalogSelection
+                )
+            case .library:
+                NavigationStack { LibraryView() }
+            case .profile:
+                NavigationStack { ProfileView() }
+            }
         } detail: {
             switch environment.selectedTab {
             case .catalog:
-                CatalogNavigationView()
+                switch environment.tabletCatalogSelection {
+                case let .work(work):
+                    WorkDetailView(work: work, repository: environment.catalogRepository)
+                case let .linkedWork(identifier):
+                    LinkedWorkView(identifier: identifier, repository: environment.catalogRepository)
+                case nil:
+                    ContentUnavailableView(
+                        "Оберіть твір",
+                        systemImage: "books.vertical",
+                        description: Text("Відомості про твір і його видання відкриються тут.")
+                    )
+                }
             case .library:
-                NavigationStack { LibraryUnavailableView() }
+                ContentUnavailableView("Бібліотека", systemImage: "bookmark")
             case .profile:
-                NavigationStack { AboutView() }
+                ContentUnavailableView("Профіль", systemImage: "person.crop.circle")
             }
         }
     }
@@ -122,7 +156,11 @@ private struct CatalogNavigationView: View {
                 fileID: presentation.fileID,
                 fallbackTitle: presentation.fallbackTitle,
                 initialPage: presentation.initialPage,
-                repository: environment.readerRepository
+                repository: environment.readerRepository,
+                session: environment.session,
+                account: environment.account,
+                localPositions: environment.localReadingPositions,
+                library: environment.library
             )
         }
     }

@@ -5,6 +5,7 @@ struct WorkDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
     let work: WorkSummary
     @StateObject private var model: WorkDetailViewModel
+    @State private var saveMessage: String?
 
     init(work: WorkSummary, repository: any CatalogRepository) {
         self.work = work
@@ -39,6 +40,23 @@ struct WorkDetailView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if let description = work.description, !description.isEmpty {
+                    Text(description)
+                        .font(.body)
+                        .foregroundStyle(BeryndaColor.ink)
+                }
+
+                BeryndaPanel {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Бібліографічні відомості", systemImage: "text.book.closed")
+                            .font(.headline)
+                        detailRow("Мова", value: work.language?.uppercased())
+                        detailRow("Перша публікація", value: work.firstPublishedYear.map(String.init))
+                        detailRow("Обсяг", value: work.pages.map { "\($0) с." })
+                        detailRow("Права", value: rightsLabel)
+                    }
                 }
 
                 Text("Видання")
@@ -76,7 +94,56 @@ struct WorkDetailView: View {
         }
         .background(BeryndaColor.paper)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("До списку", systemImage: "bookmark") {
+                    Task {
+                        let result = await environment.library.quickAdd(workID: work.id)
+                        saveMessage = result.message
+                    }
+                }
+                .disabled(environment.library.isMutating)
+                .accessibilityIdentifier("work.quick-add")
+            }
+        }
+        .alert("Бібліотека", isPresented: Binding(
+            get: { saveMessage != nil },
+            set: { if !$0 { saveMessage = nil } }
+        )) {
+            Button("Гаразд", role: .cancel) {}
+        } message: {
+            Text(saveMessage ?? "")
+        }
         .task { await model.load() }
+    }
+
+    @ViewBuilder
+    private func detailRow(_ label: String, value: String?) -> some View {
+        if let value, !value.isEmpty {
+            LabeledContent(label, value: value)
+                .font(.subheadline)
+        }
+    }
+
+    private var rightsLabel: String? {
+        switch work.rightsSummary {
+        case "public_domain": "Суспільне надбання"
+        case "open_license": "Відкрита ліцензія"
+        case "permission": "Дозволено правовласником"
+        case "copyrighted": "Захищено авторським правом"
+        default: nil
+        }
+    }
+}
+
+extension LibraryViewModel.SaveResult {
+    var message: String {
+        switch self {
+        case .saved: "Додано до бібліографічного списку."
+        case .alreadySaved: "Цей твір уже є у вашому списку."
+        case .signInRequired: "Увійдіть у профілі, щоб зберігати твори."
+        case let .failed(message): message
+        }
     }
 }
 
@@ -93,6 +160,11 @@ private struct EditionRow: View {
                 Text(metadata)
                     .font(.subheadline)
                     .foregroundStyle(BeryndaColor.mutedInk)
+                if let pageCount = edition.pageCount {
+                    Text("\(pageCount) сторінок · \(edition.language.uppercased())")
+                        .font(.caption)
+                        .foregroundStyle(BeryndaColor.mutedInk)
+                }
 
                 if let fileID = edition.readableFileID, edition.canRead {
                     Button {

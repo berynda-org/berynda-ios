@@ -40,17 +40,68 @@ public struct UserProfile: Codable, Equatable, Sendable {
     public let id: UUID
     public let email: String
     public let displayName: String?
+    public let bio: String?
+    public let institutionName: String?
+    public let uiLanguage: String
+    public let privacySettings: [String: Bool]
 
-    public init(id: UUID, email: String, displayName: String?) {
+    public init(
+        id: UUID,
+        email: String,
+        displayName: String?,
+        bio: String? = nil,
+        institutionName: String? = nil,
+        uiLanguage: String = "uk",
+        privacySettings: [String: Bool] = [:]
+    ) {
         self.id = id
         self.email = email
         self.displayName = displayName
+        self.bio = bio
+        self.institutionName = institutionName
+        self.uiLanguage = uiLanguage
+        self.privacySettings = privacySettings
+    }
+
+    public var readingHistoryEnabled: Bool {
+        privacySettings["reading_history_enabled"] ?? true
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        email = try container.decode(String.self, forKey: .email)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        bio = try container.decodeIfPresent(String.self, forKey: .bio)
+        institutionName = try container.decodeIfPresent(String.self, forKey: .institutionName)
+        uiLanguage = (try? container.decode(String.self, forKey: .uiLanguage)) ?? "uk"
+        privacySettings = (try? container.decode([String: Bool].self, forKey: .privacySettings)) ?? [:]
     }
 
     enum CodingKeys: String, CodingKey {
         case id
         case email
         case displayName = "display_name"
+        case bio
+        case institutionName = "institution_name"
+        case uiLanguage = "ui_language"
+        case privacySettings = "privacy_settings"
+    }
+}
+
+public struct RegistrationResult: Codable, Equatable, Sendable {
+    public let id: UUID
+    public let email: String
+    public let activation: String
+
+    public init(id: UUID, email: String, activation: String) {
+        self.id = id
+        self.email = email
+        self.activation = activation
+    }
+
+    public var requiresEmailConfirmation: Bool {
+        activation == "email_confirmation_required"
     }
 }
 
@@ -72,6 +123,7 @@ public enum SessionState: Equatable, Sendable {
 
 public enum SessionError: Error, Equatable, Sendable {
     case invalidCredentials
+    case invalidInput
     case invalidToken
     case expired
     case invalidResponse
@@ -84,6 +136,8 @@ extension SessionError: LocalizedError {
         switch self {
         case .invalidCredentials:
             "Неправильна електронна адреса або пароль."
+        case .invalidInput:
+            "Перевірте введені дані й спробуйте ще раз."
         case .invalidToken, .expired:
             "Сеанс завершився. Увійдіть знову."
         case .invalidResponse:

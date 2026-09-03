@@ -5,27 +5,40 @@ import UIKit
 
 struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: ReaderViewModel
+    @ObservedObject private var account: AccountViewModel
     @State private var showsContents = false
     @State private var showsAppearance = false
     @State private var draftPage = 1.0
     @State private var isScrubbing = false
     @State private var textScale: CGFloat = 1
     @State private var lineSpacingScale: CGFloat = 1
+    @State private var saveMessage: String?
     private let fallbackTitle: String
+    private let library: LibraryViewModel
 
     init(
         fileID: UUID,
         fallbackTitle: String,
         initialPage: Int? = nil,
-        repository: any ReaderRepository
+        repository: any ReaderRepository,
+        session: SessionController,
+        account: AccountViewModel,
+        localPositions: LocalReadingPositionStore,
+        library: LibraryViewModel
     ) {
         self.fallbackTitle = fallbackTitle
+        self.library = library
+        _account = ObservedObject(wrappedValue: account)
         _model = StateObject(
             wrappedValue: ReaderViewModel(
                 fileID: fileID,
                 initialPage: initialPage,
-                repository: repository
+                repository: repository,
+                session: session,
+                account: account,
+                localPositions: localPositions
             )
         )
     }
@@ -79,6 +92,21 @@ struct ReaderView: View {
                         }
                     }
                 }
+                if account.state == .authenticated {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Закладка", systemImage: "bookmark") {
+                            Task {
+                                let result = await library.quickAdd(
+                                    fileID: model.fileID,
+                                    page: model.currentPage
+                                )
+                                saveMessage = result.message
+                            }
+                        }
+                        .disabled(library.isMutating)
+                        .accessibilityIdentifier("reader.bookmark")
+                    }
+                }
             }
         }
         .task { await model.load() }
@@ -101,6 +129,19 @@ struct ReaderView: View {
         .onChange(of: model.currentPage) { _, page in
             guard !isScrubbing else { return }
             draftPage = Double(page)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            Task { await model.flushPosition() }
+        }
+        .onDisappear { Task { await model.flushPosition() } }
+        .alert("Бібліотека", isPresented: Binding(
+            get: { saveMessage != nil },
+            set: { if !$0 { saveMessage = nil } }
+        )) {
+            Button("Гаразд", role: .cancel) {}
+        } message: {
+            Text(saveMessage ?? "")
         }
         .accessibilityIdentifier("reader.\(model.fileID)")
     }

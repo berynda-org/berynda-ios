@@ -10,6 +10,7 @@ struct CatalogView: View {
 }
 
 private struct CatalogLoadedView: View {
+    @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model: CatalogViewModel
 
     init(repository: any CatalogRepository) {
@@ -30,7 +31,12 @@ private struct CatalogLoadedView: View {
                     systemImage: "text.magnifyingglass"
                 )
             case let .loaded(works, totalCount):
-                WorkList(works: works, totalCount: totalCount, model: model)
+                WorkList(
+                    works: works,
+                    totalCount: totalCount,
+                    collections: model.query.isEmpty ? environment.library.publicCollections : [],
+                    model: model
+                )
             case let .failed(message):
                 BeryndaErrorState(
                     title: "Не вдалося завантажити",
@@ -42,21 +48,103 @@ private struct CatalogLoadedView: View {
             .background(BeryndaColor.paper)
             .navigationTitle("Каталог")
             .searchable(text: $model.query, prompt: "Назва або автор")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu("Фільтри", systemImage: "line.3.horizontal.decrease.circle") {
+                        Toggle("Лише доступні для читання", isOn: $model.readableOnly)
+                        Picker("Мова", selection: $model.languageFilter) {
+                            Text("Усі мови").tag(String?.none)
+                            Text("Українська").tag(String?.some("uk"))
+                            Text("English").tag(String?.some("en"))
+                        }
+                    }
+                }
+            }
             .accessibilityIdentifier("catalog_screen")
             .onChange(of: model.query) { _, _ in model.searchChanged() }
+            .onChange(of: model.readableOnly) { _, _ in model.searchChanged() }
+            .onChange(of: model.languageFilter) { _, _ in model.searchChanged() }
             .task {
                 if case .idle = model.state { await model.load() }
+                if environment.library.publicCollections.isEmpty {
+                    await environment.library.loadPublicCollections()
+                }
             }
+    }
+}
+
+struct TabletCatalogColumn: View {
+    @StateObject private var model: CatalogViewModel
+    @Binding var selection: CatalogDestination?
+
+    init(repository: any CatalogRepository, selection: Binding<CatalogDestination?>) {
+        _model = StateObject(wrappedValue: CatalogViewModel(repository: repository))
+        _selection = selection
+    }
+
+    var body: some View {
+        Group {
+            switch model.state {
+            case .idle, .loading:
+                BeryndaLoadingState(message: "Завантажуємо каталог…")
+            case let .loaded(works, _) where works.isEmpty:
+                BeryndaEmptyState(
+                    title: "Нічого не знайдено",
+                    message: "Спробуйте змінити запит або фільтри.",
+                    systemImage: "text.magnifyingglass"
+                )
+            case let .loaded(works, _):
+                List(works, selection: $selection) { work in
+                    WorkRow(work: work)
+                        .tag(CatalogDestination.work(work))
+                        .task { await model.loadNextPageIfNeeded(after: work) }
+                }
+                .listStyle(.plain)
+                .refreshable { await model.load() }
+            case let .failed(message):
+                BeryndaErrorState(
+                    title: "Не вдалося завантажити",
+                    message: message,
+                    retry: { Task { await model.load() } }
+                )
+            }
+        }
+        .navigationTitle("Каталог")
+        .searchable(text: $model.query, prompt: "Назва або автор")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu("Фільтри", systemImage: "line.3.horizontal.decrease.circle") {
+                    Toggle("Лише доступні для читання", isOn: $model.readableOnly)
+                    Picker("Мова", selection: $model.languageFilter) {
+                        Text("Усі мови").tag(String?.none)
+                        Text("Українська").tag(String?.some("uk"))
+                        Text("English").tag(String?.some("en"))
+                    }
+                }
+            }
+        }
+        .onChange(of: model.query) { _, _ in model.searchChanged() }
+        .onChange(of: model.readableOnly) { _, _ in model.searchChanged() }
+        .onChange(of: model.languageFilter) { _, _ in model.searchChanged() }
+        .task { if case .idle = model.state { await model.load() } }
     }
 }
 
 private struct WorkList: View {
     let works: [WorkSummary]
     let totalCount: Int
+    let collections: [PublicCollectionSummary]
     @ObservedObject var model: CatalogViewModel
 
     var body: some View {
         List {
+            if !collections.isEmpty {
+                Section("Вибрані колекції") {
+                    ForEach(collections.filter(\.isFeatured)) { collection in
+                        CollectionShelf(collection: collection)
+                    }
+                }
+            }
             Section {
                 ForEach(works) { work in
                     NavigationLink(value: CatalogDestination.work(work)) {
@@ -108,6 +196,71 @@ private struct WorkList: View {
     }
 }
 
+private struct CollectionShelf: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    let collection: PublicCollectionSummary
+    @State private var saveMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(collection.name).font(.headline)
+                    if !collection.description.isEmpty {
+                        Text(collection.description)
+                            .font(.caption)
+                            .foregroundStyle(BeryndaColor.mutedInk)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer()
+                Button("Зберегти", systemImage: "bookmark") {
+                    Task {
+                        let result = await environment.library.setCollectionSaved(collection, saved: true)
+                        saveMessage = result.message
+                    }
+                }
+                .labelStyle(.iconOnly)
+                .disabled(environment.library.isMutating)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 14) {
+                    ForEach(collection.featuredWorks) { work in
+                        Button {
+                            environment.catalogPath.append(.linkedWork(identifier: work.slug))
+                        } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                BeryndaBookCover(
+                                    title: work.title,
+                                    imageURL: nil,
+                                    glyph: work.coverGlyph,
+                                    tone: work.coverTone,
+                                    width: 64,
+                                    height: 92
+                                )
+                                Text(work.title)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(BeryndaColor.ink)
+                                    .lineLimit(2)
+                                    .frame(width: 96, alignment: .leading)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .alert("Колекція", isPresented: Binding(
+            get: { saveMessage != nil },
+            set: { if !$0 { saveMessage = nil } }
+        )) {
+            Button("Гаразд", role: .cancel) {}
+        } message: { Text(saveMessage ?? "") }
+    }
+}
+
 private struct WorkRow: View {
     let work: WorkSummary
 
@@ -132,6 +285,11 @@ private struct WorkRow: View {
                 Text(editionsLabel)
                     .font(.caption)
                     .foregroundStyle(BeryndaColor.mutedInk)
+                if let rights = work.rightsSummary, rights != "none", rights != "mixed" {
+                    Label(rightsLabel(rights), systemImage: "checkmark.shield")
+                        .font(.caption2)
+                        .foregroundStyle(BeryndaColor.accent)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -143,6 +301,15 @@ private struct WorkRow: View {
         case 0: "Бібліографічний запис"
         case 1: "1 видання"
         default: "\(work.editionsCount) видань"
+        }
+    }
+
+    private func rightsLabel(_ value: String) -> String {
+        switch value {
+        case "public_domain": "Суспільне надбання"
+        case "open_license": "Відкрита ліцензія"
+        case "permission": "Дозволено правовласником"
+        default: "Умови доступу визначено"
         }
     }
 }

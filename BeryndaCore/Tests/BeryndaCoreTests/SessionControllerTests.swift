@@ -87,6 +87,16 @@ private actor AuthenticationStub: AuthenticationServing {
         loginSession
     }
 
+    func register(email: String, password: String, displayName: String) async throws -> RegistrationResult {
+        RegistrationResult(
+            id: loginSession.user.id,
+            email: email,
+            activation: "email_confirmation_required"
+        )
+    }
+
+    func requestPasswordReset(email: String) async throws {}
+
     func refresh(refreshToken: String) async throws -> AuthTokens {
         refreshCallsValue += 1
         if refreshDelayNanoseconds > 0 {

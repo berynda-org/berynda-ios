@@ -5,6 +5,8 @@ import FoundationNetworking
 
 public protocol AuthenticationServing: Sendable {
     func login(email: String, password: String) async throws -> AuthSession
+    func register(email: String, password: String, displayName: String) async throws -> RegistrationResult
+    func requestPasswordReset(email: String) async throws
     func refresh(refreshToken: String) async throws -> AuthTokens
     func logout(accessToken: String, refreshToken: String) async throws
 }
@@ -39,6 +41,34 @@ public actor LiveAuthenticationService: AuthenticationServing {
         )
         let tokens = try AuthTokens(access: response.access, refresh: response.refresh)
         return AuthSession(tokens: tokens, user: response.user)
+    }
+
+    public func register(
+        email: String,
+        password: String,
+        displayName: String
+    ) async throws -> RegistrationResult {
+        try await post(
+            path: "auth/register/",
+            body: RegistrationBody(
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                password: password,
+                displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            ),
+            bearerToken: nil,
+            unauthorizedError: .invalidInput
+        )
+    }
+
+    public func requestPasswordReset(email: String) async throws {
+        let _: StatusResponse = try await post(
+            path: "auth/password-reset/",
+            body: PasswordResetBody(
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines)
+            ),
+            bearerToken: nil,
+            unauthorizedError: .invalidInput
+        )
     }
 
     public func refresh(refreshToken: String) async throws -> AuthTokens {
@@ -128,6 +158,8 @@ public actor LiveAuthenticationService: AuthenticationServing {
             }
         case 401:
             throw unauthorizedError
+        case 400, 409, 422:
+            throw SessionError.invalidInput
         default:
             throw SessionError.unavailable
         }
@@ -137,6 +169,21 @@ public actor LiveAuthenticationService: AuthenticationServing {
 private struct LoginBody: Encodable {
     let email: String
     let password: String
+}
+
+private struct RegistrationBody: Encodable {
+    let email: String
+    let password: String
+    let displayName: String
+
+    enum CodingKeys: String, CodingKey {
+        case email, password
+        case displayName = "display_name"
+    }
+}
+
+private struct PasswordResetBody: Encodable {
+    let email: String
 }
 
 private struct RefreshBody: Encodable {
@@ -156,4 +203,8 @@ private struct RefreshResponse: Decodable {
 
 private struct EmptyResponse: Decodable {
     init() {}
+}
+
+private struct StatusResponse: Decodable {
+    let status: String
 }

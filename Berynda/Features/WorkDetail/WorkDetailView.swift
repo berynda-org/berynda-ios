@@ -164,27 +164,54 @@ private struct BibliographyPanel: View {
                 }
 
                 ForEach(work.contributorsByRole) { entry in
-                    detailRow(Self.roleLabel(entry.role, count: entry.names.count),
-                              value: entry.names.joined(separator: ", "))
+                    detailRow(
+                        Self.roleLabel(entry.role, count: entry.names.count),
+                        key: entry.role,
+                        value: entry.names.joined(separator: ", ")
+                    )
                 }
 
-                detailRow("Оригінальна назва", value: originalTitle)
-                detailRow("Вид", value: kindLabel)
-                detailRow("Мова", value: languageLabel)
-                detailRow("Перша публікація", value: work.firstPublishedYear.map(String.init))
-                detailRow("Обсяг", value: work.pages.map { "\($0) с." })
-                detailRow("Тематика", value: work.topics.map { $0.name }.joined(separator: ", "))
-                detailRow("Жанри", value: work.genres.map { $0.name }.joined(separator: ", "))
+                detailRow("Оригінальна назва", key: "original-title", value: originalTitle)
+                detailRow("Вид", key: "kind", value: kindLabel)
+                detailRow("Мова", key: "language", value: languageLabel)
+                detailRow(
+                    "Перша публікація",
+                    key: "first-published",
+                    value: work.firstPublishedYear.map(String.init)
+                )
+                detailRow("Обсяг", key: "extent", value: work.pages.map { "\($0) с." })
+                detailRow(
+                    "Тематика",
+                    key: "topics",
+                    value: work.topics.map { $0.name }.joined(separator: ", ")
+                )
+                detailRow(
+                    "Жанри",
+                    key: "genres",
+                    value: work.genres.map { $0.name }.joined(separator: ", ")
+                )
             }
         }
         .accessibilityIdentifier("work.bibliography")
     }
 
+    /// Two plain `Text`s rather than `LabeledContent`, which merges its label
+    /// and value into a single accessibility element and so leaves neither
+    /// half queryable. The value carries a stable identifier so tests assert
+    /// on structure rather than on Ukrainian display strings.
     @ViewBuilder
-    private func detailRow(_ label: String, value: String?) -> some View {
+    private func detailRow(_ label: String, key: String, value: String?) -> some View {
         if let value, !value.isEmpty {
-            LabeledContent(label, value: value)
-                .font(.subheadline)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(label)
+                    .foregroundStyle(BeryndaColor.mutedInk)
+                Spacer(minLength: 12)
+                Text(value)
+                    .foregroundStyle(BeryndaColor.ink)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("work.bibliography.\(key)")
+            }
+            .font(.subheadline)
         }
     }
 
@@ -238,12 +265,18 @@ private struct RightsPanel: View {
         if let summary = Self.summary(for: work.rightsSummary) {
             BeryndaPanel {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label(summary.title, systemImage: summary.symbol)
-                        .font(.headline)
-                        .foregroundStyle(BeryndaColor.ink)
+                    HStack(spacing: 8) {
+                        Image(systemName: summary.symbol)
+                            .accessibilityHidden(true)
+                        Text(summary.title)
+                            .accessibilityIdentifier("work.rights.title")
+                    }
+                    .font(.headline)
+                    .foregroundStyle(BeryndaColor.ink)
                     Text(summary.explanation)
                         .font(.subheadline)
                         .foregroundStyle(BeryndaColor.mutedInk)
+                        .accessibilityIdentifier("work.rights.explanation")
                     Text("Доступність окремих файлів визначається для кожного видання окремо.")
                         .font(.caption)
                         .foregroundStyle(BeryndaColor.mutedInk)

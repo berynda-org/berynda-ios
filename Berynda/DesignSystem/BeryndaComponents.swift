@@ -1,3 +1,4 @@
+import BeryndaCore
 import SwiftUI
 
 enum BeryndaSpacing {
@@ -73,8 +74,9 @@ struct BeryndaErrorState: View {
 struct BeryndaBookCover: View {
     let title: String
     var imageURL: URL? = nil
-    let glyph: String?
-    let tone: String?
+    /// Resolved once from the work (`work.coverDesign`) so the catalog list,
+    /// the detail header, and the library all draw the same cover.
+    let design: CoverDesign
     var width: CGFloat = 54
     var height: CGFloat = 78
 
@@ -110,37 +112,63 @@ struct BeryndaBookCover: View {
     }
 
     private var generatedCover: some View {
-        let palette = BeryndaColor.coverPalette(for: tone)
+        let palette = BeryndaColor.coverPalette(for: design.tone)
         return Rectangle()
             .fill(palette.background)
             .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(.black.opacity(0.16))
-                    .frame(width: max(width * 0.07, 3))
-                    .padding(.vertical, 2)
+                spine
             }
             .overlay {
-                RoundedRectangle(cornerRadius: max(width * 0.07, 3), style: .continuous)
-                    .stroke(palette.ink.opacity(0.38), lineWidth: 1)
-                    .padding(max(width * 0.1, 5))
+                variantDecoration(ink: palette.ink)
             }
             .overlay {
-                Text(displayGlyph)
-                    .font(.system(size: width * 0.42, weight: .semibold, design: .serif))
-                    .minimumScaleFactor(0.5)
-                    .foregroundStyle(palette.ink)
-                    .padding(width * 0.14)
+                glyphView(ink: palette.ink)
             }
+    }
+
+    private var spine: some View {
+        Rectangle()
+            .fill(.black.opacity(0.16))
+            .frame(width: max(width * 0.07, 3))
+            .padding(.vertical, 2)
+    }
+
+    /// The three layout templates kept after the cover-pattern review:
+    /// `plain` has no decoration, `frame` an inset rule, `label` a panel the
+    /// glyph sits inside.
+    @ViewBuilder
+    private func variantDecoration(ink: Color) -> some View {
+        switch design.variant {
+        case .plain:
+            EmptyView()
+        case .frame:
+            RoundedRectangle(cornerRadius: max(width * 0.07, 3), style: .continuous)
+                .stroke(ink.opacity(0.38), lineWidth: 1)
+                .padding(max(width * 0.1, 5))
+        case .label:
+            RoundedRectangle(cornerRadius: max(width * 0.05, 2), style: .continuous)
+                .fill(ink.opacity(0.12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: max(width * 0.05, 2), style: .continuous)
+                        .stroke(ink.opacity(0.32), lineWidth: 1)
+                }
+                .padding(.horizontal, max(width * 0.12, 6))
+                .padding(.vertical, max(height * 0.22, 10))
+        }
+    }
+
+    @ViewBuilder
+    private func glyphView(ink: Color) -> some View {
+        if let glyph = design.glyph {
+            Text(glyph)
+                .font(.system(size: width * 0.42, weight: .semibold, design: .serif))
+                .minimumScaleFactor(0.5)
+                .foregroundStyle(ink)
+                .padding(width * 0.14)
+        }
     }
 
     private var coverShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: max(width * 0.09, 4), style: .continuous)
-    }
-
-    private var displayGlyph: String {
-        if let glyph, !glyph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return glyph
-        }
-        return String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1)).uppercased()
     }
 }

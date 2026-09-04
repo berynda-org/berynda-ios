@@ -36,7 +36,9 @@ actor UITestRepository: CatalogRepository, ReaderRepository, LibraryRepository {
         let json: String
         switch identifier.lowercased() {
         case "kobzar", Self.kobzarWorkID.uuidString.lowercased():
-            json = Self.kobzarWork
+            // Detail-shaped, unlike the list row, so the enriched
+            // bibliography is exercised rather than assumed.
+            json = Self.kobzarDetail
         case "lisova-pisnia", Self.forestSongWorkID.uuidString.lowercased():
             json = Self.forestSongWork
         case "slovo-o-polku", Self.noFileWorkID.uuidString.lowercased():
@@ -140,6 +142,8 @@ private extension UITestRepository {
     }
 
     static let kobzarWork = #"{"id":"11111111-1111-1111-1111-111111111111","slug":"kobzar","title":"Кобзар","subtitle":"Вибрані поезії","language":"uk","first_published_year":1840,"authors":[{"id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","display_name":"Тарас Шевченко"}],"editions_count":1,"has_text_file":true,"cover_image_url":null,"cover_tone":"burgundy","cover_variant":"frame","cover_glyph":"К"}"#
+
+    static let kobzarDetail = #"{"id":"11111111-1111-1111-1111-111111111111","slug":"kobzar","title":"Кобзар","subtitle":"Вибрані поезії","original_title":null,"language":"uk","additional_languages":["ru"],"first_published_year":1840,"work_type":"book","is_collection":true,"rights_summary":"public_domain","pd_status":"unknown","editions_count":1,"has_text_file":true,"cover_image_url":null,"cover_tone":"burgundy","cover_variant":"frame","cover_glyph":"К","literary_form":{"id":"cccccccc-cccc-cccc-cccc-cccccccccccc","name":"Поезія","name_en":"Poetry"},"genres":[{"id":"dddddddd-dddd-dddd-dddd-dddddddddddd","name":"Лірика","name_en":"Lyric"}],"topics":[{"id":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee","name":"Українська література","name_en":null}],"contributions":[{"person_id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa","role":"author","person_display_name":"Тарас Шевченко","display_name_override":null},{"person_id":"ffffffff-ffff-ffff-ffff-ffffffffffff","role":"editor","person_display_name":"Іван Редактор","display_name_override":null}]}"#
 
     static let forestSongWork = #"{"id":"22222222-2222-2222-2222-222222222222","slug":"lisova-pisnia","title":"Лісова пісня","subtitle":null,"language":"uk","first_published_year":1911,"authors":[{"id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","display_name":"Леся Українка"}],"editions_count":1,"has_text_file":false,"cover_image_url":null,"cover_tone":"green","cover_variant":"frame","cover_glyph":"Л"}"#
 

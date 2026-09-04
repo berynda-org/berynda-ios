@@ -73,6 +73,118 @@ final class BeryndaTests: XCTestCase {
         XCTAssertEqual(requests.map(\.page), [1, 2])
     }
 
+    @MainActor
+    func testWorkDetailEnrichesAThinListRowAndLoadsEditions() async throws {
+        let summary = try Self.listRow()
+        let repository = WorkDetailRepositoryStub(detail: try Self.detailRecord())
+        let model = WorkDetailViewModel(work: summary, repository: repository)
+
+        XCTAssertFalse(model.work.isDetailed)
+        await model.load()
+
+        XCTAssertTrue(model.work.isDetailed)
+        XCTAssertEqual(model.work.contributorsByRole.map(\.role), ["author", "translator"])
+        XCTAssertEqual(model.work.literaryForm?.name, "Драма")
+        guard case let .loaded(editions) = model.editions else {
+            return XCTFail("Expected editions, got \(model.editions)")
+        }
+        XCTAssertEqual(editions.count, 1)
+        let identifiers = await repository.detailRequests
+        XCTAssertEqual(identifiers, ["lisova-pisnia"])
+    }
+
+    @MainActor
+    func testWorkDetailKeepsTheSummaryWhenEnrichmentFails() async throws {
+        let summary = try Self.listRow()
+        let repository = WorkDetailRepositoryStub(detail: nil)
+        let model = WorkDetailViewModel(work: summary, repository: repository)
+
+        await model.load()
+
+        // A failed enrichment must not blank a page that already renders.
+        XCTAssertEqual(model.work.title, summary.title)
+        XCTAssertFalse(model.work.isDetailed)
+        XCTAssertFalse(model.isEnriching)
+        guard case .loaded = model.editions else {
+            return XCTFail("Editions must still load when enrichment fails")
+        }
+    }
+
+    @MainActor
+    func testWorkDetailDoesNotRefetchARecordThatIsAlreadyDetailed() async throws {
+        let detail = try Self.detailRecord()
+        let repository = WorkDetailRepositoryStub(detail: detail)
+        let model = WorkDetailViewModel(work: detail, repository: repository)
+
+        await model.load()
+
+        let identifiers = await repository.detailRequests
+        XCTAssertTrue(identifiers.isEmpty)
+    }
+
+    @MainActor
+    func testWorkDetailRetriesOnlyTheEditionsSection() async throws {
+        let summary = try Self.listRow()
+        let repository = WorkDetailRepositoryStub(detail: nil, editionsFailures: 1)
+        let model = WorkDetailViewModel(work: summary, repository: repository)
+
+        await model.load()
+        guard case .failed = model.editions else {
+            return XCTFail("Expected a failed editions section")
+        }
+
+        await model.loadEditions()
+        guard case let .loaded(editions) = model.editions else {
+            return XCTFail("Expected the retry to succeed")
+        }
+        XCTAssertEqual(editions.count, 1)
+    }
+
+    private static func listRow() throws -> WorkSummary {
+        let json = """
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "slug": "lisova-pisnia",
+          "title": "Лісова пісня",
+          "subtitle": null,
+          "language": "uk",
+          "first_published_year": 1912,
+          "authors": [{"id": "88888888-8888-8888-8888-888888888888", "display_name": "Леся Українка"}],
+          "editions_count": 1,
+          "has_text_file": true,
+          "cover_image_url": null,
+          "cover_tone": null,
+          "cover_variant": null,
+          "cover_glyph": null
+        }
+        """
+        return try JSONDecoder().decode(WorkSummary.self, from: Data(json.utf8))
+    }
+
+    private static func detailRecord() throws -> WorkSummary {
+        let json = """
+        {
+          "id": "33333333-3333-3333-3333-333333333333",
+          "slug": "lisova-pisnia",
+          "title": "Лісова пісня",
+          "original_title": "Лїсова пісня",
+          "language": "uk",
+          "first_published_year": 1912,
+          "editions_count": 1,
+          "literary_form": {"id": "44444444-4444-4444-4444-444444444444", "name": "Драма"},
+          "genres": [],
+          "topics": [],
+          "contributions": [
+            {"person_id": "88888888-8888-8888-8888-888888888888", "role": "author",
+             "person_display_name": "Леся Українка", "display_name_override": null},
+            {"person_id": "99999999-9999-9999-9999-999999999999", "role": "translator",
+             "person_display_name": "Jerzy Litwiniuk", "display_name_override": null}
+          ]
+        }
+        """
+        return try JSONDecoder().decode(WorkSummary.self, from: Data(json.utf8))
+    }
+
     private func decodePage(
         id: String,
         title: String,
@@ -138,6 +250,55 @@ private actor CatalogRepositoryStub: CatalogRepository {
 
     enum StubError: Error {
         case missingPage
+        case unsupported
+    }
+}
+
+private actor WorkDetailRepositoryStub: CatalogRepository {
+    private let detail: WorkSummary?
+    private var remainingEditionsFailures: Int
+    private(set) var detailRequests: [String] = []
+
+    init(detail: WorkSummary?, editionsFailures: Int = 0) {
+        self.detail = detail
+        self.remainingEditionsFailures = editionsFailures
+    }
+
+    func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
+        throw StubError.unsupported
+    }
+
+    func work(identifier: String) async throws -> WorkSummary {
+        detailRequests.append(identifier)
+        guard let detail else { throw StubError.unsupported }
+        return detail
+    }
+
+    func editions(workID: UUID) async throws -> [EditionSummary] {
+        if remainingEditionsFailures > 0 {
+            remainingEditionsFailures -= 1
+            throw StubError.unsupported
+        }
+        let json = """
+        [{
+          "id": "aaaaaaaa-0000-0000-0000-000000000001",
+          "work": "\(workID.uuidString.lowercased())",
+          "display_title": "Київ, 1963",
+          "language": "uk",
+          "year": 1963,
+          "publisher_name": "Дніпро",
+          "publication_place": "Київ",
+          "page_count": 240,
+          "readable_file_id": null,
+          "can_read": false,
+          "can_download": false,
+          "restriction_reason": "Файл ще не оцифровано"
+        }]
+        """
+        return try JSONDecoder().decode([EditionSummary].self, from: Data(json.utf8))
+    }
+
+    enum StubError: Error {
         case unsupported
     }
 }

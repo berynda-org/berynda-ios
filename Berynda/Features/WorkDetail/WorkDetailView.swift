@@ -3,92 +3,29 @@ import SwiftUI
 
 struct WorkDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
-    let work: WorkSummary
     @StateObject private var model: WorkDetailViewModel
     @State private var saveMessage: String?
 
     init(work: WorkSummary, repository: any CatalogRepository) {
-        self.work = work
         _model = StateObject(
-            wrappedValue: WorkDetailViewModel(workID: work.id, repository: repository)
+            wrappedValue: WorkDetailViewModel(work: work, repository: repository)
         )
     }
+
+    private var work: WorkSummary { model.work }
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                HStack(alignment: .top, spacing: BeryndaSpacing.standard) {
-                    BeryndaBookCover(
-                        title: work.title,
-                        imageURL: work.coverImageURL,
-                        glyph: work.coverGlyph,
-                        tone: work.coverTone,
-                        width: 88,
-                        height: 128
-                    )
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(work.title)
-                            .font(.system(.largeTitle, design: .serif, weight: .bold))
-                            .foregroundStyle(BeryndaColor.ink)
-                        if let subtitle = work.subtitle {
-                            Text(subtitle).font(.title3).foregroundStyle(BeryndaColor.mutedInk)
-                        }
-                        if !work.authors.isEmpty {
-                            Text(work.authors.map(\.displayName).joined(separator: ", "))
-                                .foregroundStyle(BeryndaColor.accent)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if let description = work.description, !description.isEmpty {
-                    Text(description)
-                        .font(.body)
-                        .foregroundStyle(BeryndaColor.ink)
-                }
-
-                BeryndaPanel {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label("Бібліографічні відомості", systemImage: "text.book.closed")
-                            .font(.headline)
-                        detailRow("Мова", value: work.language?.uppercased())
-                        detailRow("Перша публікація", value: work.firstPublishedYear.map(String.init))
-                        detailRow("Обсяг", value: work.pages.map { "\($0) с." })
-                        detailRow("Права", value: rightsLabel)
-                    }
-                }
+                header
+                summaryText
+                BibliographyPanel(work: work, isEnriching: model.isEnriching)
+                RightsPanel(work: work)
 
                 Text("Видання")
                     .font(.title2.bold())
 
-                switch model.state {
-                case .loading:
-                    BeryndaLoadingState(message: "Завантажуємо видання…")
-                        .frame(minHeight: 180)
-                case let .loaded(editions) where editions.isEmpty:
-                    BeryndaEmptyState(
-                        title: "Видань ще немає",
-                        message: "Для цього твору поки немає окремого видання.",
-                        systemImage: "books.vertical"
-                    )
-                case let .loaded(editions):
-                    ForEach(editions) { edition in
-                        EditionRow(edition: edition) { fileID in
-                            environment.presentReader(
-                                fileID: fileID,
-                                fallbackTitle: edition.displayTitle
-                            )
-                        }
-                    }
-                case let .failed(message):
-                    BeryndaErrorState(
-                        title: "Не вдалося завантажити видання",
-                        message: message,
-                        retry: { Task { await model.load() } }
-                    )
-                    .frame(minHeight: 240)
-                }
+                editionsSection
             }
             .padding(20)
         }
@@ -121,21 +58,75 @@ struct WorkDetailView: View {
         .task { await model.load() }
     }
 
-    @ViewBuilder
-    private func detailRow(_ label: String, value: String?) -> some View {
-        if let value, !value.isEmpty {
-            LabeledContent(label, value: value)
-                .font(.subheadline)
+    private var header: some View {
+        HStack(alignment: .top, spacing: BeryndaSpacing.standard) {
+            BeryndaBookCover(
+                title: work.title,
+                imageURL: work.coverImageURL,
+                design: work.coverDesign,
+                width: 88,
+                height: 128
+            )
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(work.title)
+                    .font(.system(.largeTitle, design: .serif, weight: .bold))
+                    .foregroundStyle(BeryndaColor.ink)
+                if let subtitle = work.subtitle {
+                    Text(subtitle).font(.title3).foregroundStyle(BeryndaColor.mutedInk)
+                }
+                if !work.authors.isEmpty {
+                    Text(work.authors.map { $0.displayName }.joined(separator: ", "))
+                        .foregroundStyle(BeryndaColor.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var rightsLabel: String? {
-        switch work.rightsSummary {
-        case "public_domain": "Суспільне надбання"
-        case "open_license": "Відкрита ліцензія"
-        case "permission": "Дозволено правовласником"
-        case "copyrighted": "Захищено авторським правом"
-        default: nil
+    /// The catalog description, falling back to the scholarly abstract when a
+    /// work has only the latter.
+    @ViewBuilder
+    private var summaryText: some View {
+        if let text = work.description?.nilIfBlank ?? work.abstract?.nilIfBlank {
+            Text(text)
+                .font(.body)
+                .foregroundStyle(BeryndaColor.ink)
+        }
+    }
+
+    @ViewBuilder
+    private var editionsSection: some View {
+        switch model.editions {
+        case .loading:
+            BeryndaLoadingState(message: "Завантажуємо видання…")
+                .frame(minHeight: 180)
+        case let .loaded(editions) where editions.isEmpty:
+            BeryndaEmptyState(
+                title: "Видань ще немає",
+                message: work.editionsCount > 0
+                    ? "Видання цього твору зараз недоступні."
+                    : "Для цього твору поки немає окремого видання.",
+                systemImage: "books.vertical"
+            )
+            .accessibilityIdentifier("work.editions-empty")
+        case let .loaded(editions):
+            ForEach(editions) { edition in
+                EditionRow(edition: edition) { fileID in
+                    environment.presentReader(
+                        fileID: fileID,
+                        fallbackTitle: edition.displayTitle
+                    )
+                }
+            }
+        case let .failed(message):
+            BeryndaErrorState(
+                title: "Не вдалося завантажити видання",
+                message: message,
+                retry: { Task { await model.loadEditions() } }
+            )
+            .frame(minHeight: 240)
+            .accessibilityIdentifier("work.editions-error")
         }
     }
 }
@@ -152,6 +143,160 @@ extension LibraryViewModel.SaveResult {
     }
 }
 
+// MARK: - Bibliography
+
+private struct BibliographyPanel: View {
+    let work: WorkSummary
+    let isEnriching: Bool
+
+    var body: some View {
+        BeryndaPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Бібліографічні відомості", systemImage: "text.book.closed")
+                        .font(.headline)
+                    Spacer()
+                    if isEnriching {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Завантажуємо відомості")
+                    }
+                }
+
+                ForEach(work.contributorsByRole) { entry in
+                    detailRow(Self.roleLabel(entry.role, count: entry.names.count),
+                              value: entry.names.joined(separator: ", "))
+                }
+
+                detailRow("Оригінальна назва", value: originalTitle)
+                detailRow("Вид", value: kindLabel)
+                detailRow("Мова", value: languageLabel)
+                detailRow("Перша публікація", value: work.firstPublishedYear.map(String.init))
+                detailRow("Обсяг", value: work.pages.map { "\($0) с." })
+                detailRow("Тематика", value: work.topics.map { $0.name }.joined(separator: ", "))
+                detailRow("Жанри", value: work.genres.map { $0.name }.joined(separator: ", "))
+            }
+        }
+        .accessibilityIdentifier("work.bibliography")
+    }
+
+    @ViewBuilder
+    private func detailRow(_ label: String, value: String?) -> some View {
+        if let value, !value.isEmpty {
+            LabeledContent(label, value: value)
+                .font(.subheadline)
+        }
+    }
+
+    /// Only worth a row when it actually differs from the displayed title.
+    private var originalTitle: String? {
+        guard let original = work.originalTitle?.nilIfBlank, original != work.title else {
+            return nil
+        }
+        return original
+    }
+
+    /// The literary form is what identifies a work; `work_type` is only its
+    /// carrier, and «книга» says nothing about the work itself.
+    private var kindLabel: String? {
+        var parts: [String] = []
+        if let form = work.literaryForm?.name { parts.append(form) }
+        if work.isCollection { parts.append("збірка") }
+        if parts.isEmpty, let workType = work.workType?.nilIfBlank {
+            parts.append(workType)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var languageLabel: String? {
+        let all = ([work.language] + work.additionalLanguages.map { Optional($0) })
+            .compactMap { $0?.nilIfBlank }
+            .map { $0.uppercased() }
+        var seen = Set<String>()
+        let unique = all.filter { seen.insert($0).inserted }
+        return unique.isEmpty ? nil : unique.joined(separator: ", ")
+    }
+
+    static func roleLabel(_ role: String, count: Int) -> String {
+        switch role {
+        case "author": count == 1 ? "Автор" : "Автори"
+        case "translator": count == 1 ? "Переклад" : "Переклад"
+        case "compiler": count == 1 ? "Упорядник" : "Упорядники"
+        case "editor": count == 1 ? "Редактор" : "Редактори"
+        case "illustrator": count == 1 ? "Ілюстрації" : "Ілюстрації"
+        default: role
+        }
+    }
+}
+
+// MARK: - Rights
+
+private struct RightsPanel: View {
+    let work: WorkSummary
+
+    var body: some View {
+        if let summary = Self.summary(for: work.rightsSummary) {
+            BeryndaPanel {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(summary.title, systemImage: summary.symbol)
+                        .font(.headline)
+                        .foregroundStyle(BeryndaColor.ink)
+                    Text(summary.explanation)
+                        .font(.subheadline)
+                        .foregroundStyle(BeryndaColor.mutedInk)
+                    Text("Доступність окремих файлів визначається для кожного видання окремо.")
+                        .font(.caption)
+                        .foregroundStyle(BeryndaColor.mutedInk)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .accessibilityIdentifier("work.rights")
+        }
+    }
+
+    struct Summary {
+        let title: String
+        let symbol: String
+        let explanation: String
+    }
+
+    /// Bound to `rights_summary`, the work-level aggregate the backend derives.
+    /// `pd_status` is a separate, rarely-confirmed confidence pipeline and is
+    /// deliberately not used for this badge.
+    static func summary(for rightsSummary: String?) -> Summary? {
+        switch rightsSummary {
+        case "public_domain":
+            Summary(
+                title: "Суспільне надбання",
+                symbol: "building.columns",
+                explanation: "Строк майнових авторських прав сплив — твір можна вільно читати, копіювати й поширювати."
+            )
+        case "open_license":
+            Summary(
+                title: "Відкрита ліцензія",
+                symbol: "checkmark.seal",
+                explanation: "Правовласник дозволив вільне використання на умовах відкритої ліцензії."
+            )
+        case "permission":
+            Summary(
+                title: "Дозволено правовласником",
+                symbol: "hand.raised",
+                explanation: "Твір опубліковано з дозволу правовласника; умови можуть відрізнятися для окремих видань."
+            )
+        case "copyrighted":
+            Summary(
+                title: "Захищено авторським правом",
+                symbol: "lock",
+                explanation: "Читання доступне лише там, де це прямо дозволено правовласником."
+            )
+        default:
+            nil
+        }
+    }
+}
+
+// MARK: - Editions
+
 private struct EditionRow: View {
     let edition: EditionSummary
     let onRead: (UUID) -> Void
@@ -162,11 +307,13 @@ private struct EditionRow: View {
                 Text(edition.displayTitle)
                     .font(.headline)
                     .foregroundStyle(BeryndaColor.ink)
-                Text(metadata)
-                    .font(.subheadline)
-                    .foregroundStyle(BeryndaColor.mutedInk)
-                if let pageCount = edition.pageCount {
-                    Text("\(pageCount) сторінок · \(edition.language.uppercased())")
+                if !metadata.isEmpty {
+                    Text(metadata)
+                        .font(.subheadline)
+                        .foregroundStyle(BeryndaColor.mutedInk)
+                }
+                if let extent {
+                    Text(extent)
                         .font(.caption)
                         .foregroundStyle(BeryndaColor.mutedInk)
                 }
@@ -187,6 +334,7 @@ private struct EditionRow: View {
                     )
                     .font(.footnote)
                     .foregroundStyle(BeryndaColor.mutedInk)
+                    .accessibilityIdentifier("edition.restricted.\(edition.id)")
                 }
             }
         }
@@ -197,5 +345,19 @@ private struct EditionRow: View {
         [edition.year.map(String.init), edition.publisherName, edition.publicationPlace]
             .compactMap { $0 }
             .joined(separator: " · ")
+    }
+
+    private var extent: String? {
+        let parts = [
+            edition.pageCount.map { "\($0) сторінок" },
+            edition.language.nilIfBlank.map { $0.uppercased() },
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self
     }
 }

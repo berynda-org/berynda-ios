@@ -238,8 +238,7 @@ private struct CollectionShelf: View {
                                 BeryndaBookCover(
                                     title: work.title,
                                     imageURL: nil,
-                                    glyph: work.coverGlyph,
-                                    tone: work.coverTone,
+                                    design: work.coverDesign,
                                     width: 64,
                                     height: 92
                                 )
@@ -273,8 +272,7 @@ private struct WorkRow: View {
             BeryndaBookCover(
                 title: work.title,
                 imageURL: work.coverImageURL,
-                glyph: work.coverGlyph,
-                tone: work.coverTone
+                design: work.coverDesign
             )
 
             VStack(alignment: .leading, spacing: 5) {

@@ -10,6 +10,44 @@ public struct WorkAuthor: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// One person's involvement in a work, with the role preserved.
+///
+/// The list endpoint flattens contributors into `authors`; only the detail
+/// endpoint distinguishes a translator from an author. Keeping the role means
+/// the bibliography can say which is which instead of running every name
+/// together in one line.
+public struct WorkContributor: Hashable, Sendable, Identifiable {
+    public let personID: UUID
+    public let role: String
+    public let displayName: String
+
+    public var id: String { "\(personID.uuidString)-\(role)" }
+
+    public init(personID: UUID, role: String, displayName: String) {
+        self.personID = personID
+        self.role = role
+        self.displayName = displayName
+    }
+
+    /// Roles the bibliography renders, in the order it renders them. Any other
+    /// role is carried in `contributors` but not surfaced, so an unknown role
+    /// from a newer API never appears as an unlabelled name.
+    public static let presentedRoles = ["author", "translator", "compiler", "editor", "illustrator"]
+
+    public var isPresented: Bool { Self.presentedRoles.contains(role) }
+}
+
+/// A controlled-vocabulary term (literary form, genre, topic).
+public struct WorkTerm: Hashable, Sendable, Identifiable {
+    public let id: UUID
+    public let name: String
+
+    public init(id: UUID, name: String) {
+        self.id = id
+        self.name = name
+    }
+}
+
 public struct WorkSummary: Decodable, Hashable, Sendable, Identifiable {
     public let id: UUID
     public let slug: String
@@ -30,6 +68,19 @@ public struct WorkSummary: Decodable, Hashable, Sendable, Identifiable {
     public let coverVariant: String?
     public let coverGlyph: String?
 
+    // Detail-only enrichment. All optional: the same type decodes a list row
+    // and a detail record, and a list row simply carries none of these.
+    public let originalTitle: String?
+    public let abstract: String?
+    public let subtype: String?
+    public let form: String?
+    public let literaryForm: WorkTerm?
+    public let genres: [WorkTerm]
+    public let topics: [WorkTerm]
+    public let additionalLanguages: [String]
+    public let isCollection: Bool
+    public let contributors: [WorkContributor]
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -49,18 +100,35 @@ public struct WorkSummary: Decodable, Hashable, Sendable, Identifiable {
         coverTone = try container.decodeIfPresent(String.self, forKey: .coverTone)
         coverVariant = try container.decodeIfPresent(String.self, forKey: .coverVariant)
         coverGlyph = try container.decodeIfPresent(String.self, forKey: .coverGlyph)
+
+        originalTitle = try container.decodeIfPresent(String.self, forKey: .originalTitle)
+        abstract = try container.decodeIfPresent(String.self, forKey: .abstract)
+        subtype = try container.decodeIfPresent(String.self, forKey: .subtype)
+        form = try container.decodeIfPresent(String.self, forKey: .form)
+        literaryForm = (try? container.decode(WorkTermPayload.self, forKey: .literaryForm))?.term
+        genres = ((try? container.decode([WorkTermPayload].self, forKey: .genres)) ?? [])
+            .compactMap { $0.term }
+        topics = ((try? container.decode([WorkTermPayload].self, forKey: .topics)) ?? [])
+            .compactMap { $0.term }
+        additionalLanguages = (try? container.decode([String].self, forKey: .additionalLanguages)) ?? []
+        isCollection = (try? container.decode(Bool.self, forKey: .isCollection)) ?? false
+
+        let contributions = (try? container.decode([WorkContribution].self, forKey: .contributions)) ?? []
+        contributors = contributions.map {
+            WorkContributor(personID: $0.personID, role: $0.role, displayName: $0.displayName)
+        }
         if let listAuthors = try? container.decode([WorkAuthor].self, forKey: .authors) {
             authors = listAuthors
         } else {
-            let contributions = (try? container.decode([WorkContribution].self, forKey: .contributions)) ?? []
-            authors = contributions
-                .filter { $0.role == "author" || $0.role == "translator" || $0.role == "editor" || $0.role == "compiler" }
+            authors = contributors
+                .filter { $0.isPresented }
                 .map { WorkAuthor(id: $0.personID, displayName: $0.displayName) }
         }
     }
 
     enum CodingKeys: String, CodingKey {
         case id, slug, title, subtitle, description, language, authors, pages
+        case abstract, genres, topics, form, subtype
         case workType = "work_type"
         case rightsSummary = "rights_summary"
         case pdStatus = "pd_status"
@@ -72,6 +140,69 @@ public struct WorkSummary: Decodable, Hashable, Sendable, Identifiable {
         case coverVariant = "cover_variant"
         case coverGlyph = "cover_glyph"
         case contributions
+        case originalTitle = "original_title"
+        case literaryForm = "literary_form"
+        case additionalLanguages = "additional_languages"
+        case isCollection = "is_collection"
+    }
+}
+
+/// One bibliography line: a role and every name filed under it.
+///
+/// A named type rather than a tuple because Swift has no key paths into tuple
+/// elements, so `ForEach(_:)` and `map(\.role)` would both be unavailable.
+public struct WorkContributorGroup: Hashable, Sendable, Identifiable {
+    public let role: String
+    public let names: [String]
+
+    public var id: String { role }
+
+    public init(role: String, names: [String]) {
+        self.role = role
+        self.names = names
+    }
+}
+
+public extension WorkSummary {
+    /// Contributors grouped for display, in `presentedRoles` order, with the
+    /// names inside each role kept in the order the API returned them.
+    var contributorsByRole: [WorkContributorGroup] {
+        WorkContributor.presentedRoles.compactMap { role in
+            let names = contributors
+                .filter { $0.role == role }
+                .map { $0.displayName }
+            return names.isEmpty ? nil : WorkContributorGroup(role: role, names: names)
+        }
+    }
+
+    /// True when the record carries detail-only fields, i.e. it came from the
+    /// work endpoint rather than a list row.
+    var isDetailed: Bool {
+        !contributors.isEmpty
+            || !genres.isEmpty
+            || !topics.isEmpty
+            || literaryForm != nil
+            || originalTitle != nil
+            || abstract != nil
+    }
+}
+
+/// Nested term payloads are `{id, name, ...}` on both the list and detail
+/// endpoints; anything without a usable id and name is dropped rather than
+/// failing the whole decode.
+private struct WorkTermPayload: Decodable {
+    let id: UUID?
+    let name: String?
+    let nameEn: String?
+
+    var term: WorkTerm? {
+        guard let id, let name = name?.nilIfEmpty ?? nameEn?.nilIfEmpty else { return nil }
+        return WorkTerm(id: id, name: name)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case nameEn = "name_en"
     }
 }
 

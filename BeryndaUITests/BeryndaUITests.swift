@@ -49,6 +49,28 @@ final class BeryndaUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["II · с. 2 з 3"].waitForExistence(timeout: 5))
     }
 
+    func testWorkDetailShowsTheEnrichedBibliographyAndRights() {
+        openWork(named: "Кобзар")
+
+        // Roles come only from the detail record, so seeing them proves the
+        // thin list row was enriched rather than rendered as-is.
+        XCTAssertTrue(app.staticTexts["Автор"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Тарас Шевченко"].exists)
+        XCTAssertTrue(app.staticTexts["Редактор"].exists)
+        XCTAssertTrue(app.staticTexts["Іван Редактор"].exists)
+
+        XCTAssertTrue(app.staticTexts["Поезія · збірка"].exists)
+        XCTAssertTrue(app.staticTexts["Українська література"].exists)
+        XCTAssertTrue(app.staticTexts["UK, RU"].exists)
+
+        XCTAssertTrue(app.staticTexts["Суспільне надбання"].exists)
+        XCTAssertTrue(
+            app.staticTexts[
+                "Строк майнових авторських прав сплив — твір можна вільно читати, копіювати й поширювати."
+            ].exists
+        )
+    }
+
     func testRestrictedEditionExplainsWhyItCannotOpen() {
         openWork(named: "Лісова пісня")
 

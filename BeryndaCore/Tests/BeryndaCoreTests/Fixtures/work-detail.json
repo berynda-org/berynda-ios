@@ -1,0 +1,61 @@
+{
+  "id": "33333333-3333-3333-3333-333333333333",
+  "slug": "lisova-pisnia",
+  "title": "«Лісова пісня»",
+  "subtitle": "Драма-феєрія в трьох діях",
+  "original_title": "Лїсова пісня",
+  "description": null,
+  "abstract": "Драма-феєрія про Мавку та Лукаша.",
+  "language": "uk",
+  "additional_languages": ["pl"],
+  "first_published_year": 1912,
+  "work_type": "book",
+  "subtype": null,
+  "form": "verse",
+  "is_collection": false,
+  "rights_summary": "public_domain",
+  "pd_status": "unknown",
+  "cover_image_url": null,
+  "cover_tone": null,
+  "cover_variant": null,
+  "cover_glyph": null,
+  "literary_form": {
+    "id": "44444444-4444-4444-4444-444444444444",
+    "name": "Драма",
+    "name_en": "Drama"
+  },
+  "genres": [
+    { "id": "55555555-5555-5555-5555-555555555555", "name": "Феєрія", "name_en": "Faerie play" },
+    { "id": "66666666-6666-6666-6666-666666666666", "name": null, "name_en": "Verse drama" }
+  ],
+  "topics": [
+    { "id": "77777777-7777-7777-7777-777777777777", "name": "Українська література", "name_en": null }
+  ],
+  "contributions": [
+    {
+      "person_id": "88888888-8888-8888-8888-888888888888",
+      "role": "author",
+      "person_display_name": "Леся Українка",
+      "display_name_override": null
+    },
+    {
+      "person_id": "99999999-9999-9999-9999-999999999999",
+      "role": "translator",
+      "person_display_name": "Jerzy Litwiniuk",
+      "display_name_override": null
+    },
+    {
+      "person_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "role": "editor",
+      "person_display_name": "Ігор Редактор",
+      "display_name_override": "І. Редактор"
+    },
+    {
+      "person_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "role": "dedicatee",
+      "person_display_name": "Невідомий адресат",
+      "display_name_override": null
+    }
+  ],
+  "editions_count": 3
+}

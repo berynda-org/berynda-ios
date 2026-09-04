@@ -1,3 +1,4 @@
+import BeryndaCore
 import SwiftUI
 import UIKit
 
@@ -10,21 +11,23 @@ enum BeryndaColor {
     static let accent = Color(light: 0x95271D, dark: 0xE77B49)
     static let deepAccent = Color(light: 0x60241E, dark: 0xF1A078)
 
-    static func coverPalette(for tone: String?) -> (background: Color, ink: Color) {
+    /// One entry per `CoverTone`, so an unhandled tone is a compile error
+    /// rather than a work silently painted oxblood.
+    static func coverPalette(for tone: CoverTone) -> (background: Color, ink: Color) {
         let values: (UInt, UInt)
         switch tone {
-        case "blue": values = (0x385B78, 0xF5F1E8)
-        case "green": values = (0x465F4D, 0xF6F1E5)
-        case "ochre": values = (0x8A5C22, 0xFFF7E8)
-        case "plum": values = (0x66516D, 0xFAF2E6)
-        case "teal": values = (0x3E6667, 0xF6F2E8)
-        case "slate": values = (0x31404E, 0xEEF0EA)
-        case "burgundy": values = (0x5C1F2E, 0xFAF0E6)
-        case "moss": values = (0x4F5C33, 0xF4F1E2)
-        case "sepia": values = (0x6B4A30, 0xF8F0E0)
-        case "aubergine": values = (0x4A2545, 0xF6ECF2)
-        case "graphite": values = (0x37484A, 0xEEF1EC)
-        default: values = (0x6D2925, 0xFFF7E8)
+        case .oxblood: values = (0x6D2925, 0xFFF7E8)
+        case .blue: values = (0x385B78, 0xF5F1E8)
+        case .green: values = (0x465F4D, 0xF6F1E5)
+        case .ochre: values = (0x8A5C22, 0xFFF7E8)
+        case .plum: values = (0x66516D, 0xFAF2E6)
+        case .teal: values = (0x3E6667, 0xF6F2E8)
+        case .slate: values = (0x31404E, 0xEEF0EA)
+        case .burgundy: values = (0x5C1F2E, 0xFAF0E6)
+        case .moss: values = (0x4F5C33, 0xF4F1E2)
+        case .sepia: values = (0x6B4A30, 0xF8F0E0)
+        case .aubergine: values = (0x4A2545, 0xF6ECF2)
+        case .graphite: values = (0x37484A, 0xEEF1EC)
         }
         return (Color(hex: values.0), Color(hex: values.1))
     }

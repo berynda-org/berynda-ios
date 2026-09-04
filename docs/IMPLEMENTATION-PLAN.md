@@ -145,9 +145,10 @@ collection save across the sign-in sheet and completes it after successful
 authentication. These changes require a green macOS CI run before the slices
 are accepted.
 
-1. **In progress.** Finish work/edition presentation: richer bibliography and rights summaries,
-   collection links, removed/restricted/empty/retry states, stable covers, and
-   true selected-work columns on iPad.
+1. **Complete except collection links.** Richer bibliography and rights
+   summaries, removed/restricted/empty/retry states, stable covers, and true
+   selected-work columns on iPad are delivered. Collection links await a
+   backend route returning the collections that contain a work.
 2. **In progress.** Add authentication UI for login, registration confirmation, password reset,
    logout, session expiry, relaunch persistence, and return-to-action behavior.
 3. **In progress.** Implement reading-position persistence: quiet-interval PUT, background and
@@ -245,9 +246,21 @@ Review.
    app-unit tested. Readable/filter controls, featured and saved public
    collections, recommendations, removal/restriction fixtures, and recently
    viewed offline fallback remain.
-7. **Work and edition completion:** richer bibliography and rights summaries,
-   collection links, stable cover behavior, retry/empty fixtures, and true
-   selected-work columns on iPad rather than the current single detail stack.
+7. **Work and edition completion — implemented except collection links:** the
+   detail page now enriches a thin catalog row with the full work record
+   (contributors by role, original title, literary form, genres, topics,
+   additional languages, abstract) and degrades to the summary when that
+   fetch fails; rights are presented as an explained summary bound to
+   `rights_summary`, with per-edition availability stated separately;
+   `CoverDesign` resolves tone/variant/glyph once per work, seeded by the work
+   id with the web client's hash, so a work looks identical in the catalog,
+   the detail header, and collection strips; editions have their own
+   loading/empty/restricted/retry states with fixtures. True selected-work
+   columns on iPad were already delivered with slice 4. **Collection links
+   remain blocked:** the API exposes `/collections/` and
+   `/collections/<slug>/`, but no route returns the collections that contain a
+   given work, so the link cannot be built client-side. It needs a public
+   endpoint in `akrivonos/berynda` first.
 8. **Reader persistence:** authenticated position PUT, quiet-interval save,
    background/dismiss flush, `recorded: false` and disabled-history behavior,
    local resume serialization, and process-restart tests.

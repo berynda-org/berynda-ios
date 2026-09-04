@@ -4,29 +4,85 @@ import Foundation
 
 @MainActor
 final class WorkDetailViewModel: ObservableObject {
-    enum State {
+    enum EditionsState {
         case loading
         case loaded([EditionSummary])
         case failed(String)
     }
 
-    @Published private(set) var state: State = .loading
-    private let workID: UUID
+    /// Starts as the row the catalog already had, so the header renders with
+    /// no wait, and is replaced by the detail record once it arrives.
+    @Published private(set) var work: WorkSummary
+    @Published private(set) var editions: EditionsState = .loading
+    /// Enrichment is a progressive improvement, never a gate: if it fails the
+    /// page still shows the summary and the editions.
+    @Published private(set) var isEnriching = false
+
     private let repository: any CatalogRepository
 
-    init(workID: UUID, repository: any CatalogRepository) {
-        self.workID = workID
+    init(work: WorkSummary, repository: any CatalogRepository) {
+        self.work = work
         self.repository = repository
     }
 
     func load() async {
-        state = .loading
+        editions = .loading
+        // A list row carries no contributors, genres, topics, or original
+        // title, so without this the bibliography would be permanently thin.
+        let needsEnrichment = !work.isDetailed
+        isEnriching = needsEnrichment
+        let identifier = work.slug
+        let id = work.id
+
+        // Both fetches are issued off the main actor so they overlap; awaiting
+        // two main-actor methods would only have serialised them.
+        async let detail: WorkSummary? = needsEnrichment
+            ? Self.fetchDetail(identifier: identifier, from: repository)
+            : nil
+        async let editionOutcome = Self.fetchEditions(workID: id, from: repository)
+        let (detailed, outcome) = await (detail, editionOutcome)
+
+        if let detailed, detailed.id == id {
+            work = detailed
+        }
+        isEnriching = false
+        apply(outcome)
+    }
+
+    /// Retries the editions section alone. A failure there is local to that
+    /// section, so the rest of the page never reloads with it.
+    func loadEditions() async {
+        editions = .loading
+        apply(await Self.fetchEditions(workID: work.id, from: repository))
+    }
+
+    private func apply(_ outcome: Result<[EditionSummary], Error>) {
+        switch outcome {
+        case let .success(list):
+            editions = .loaded(list)
+        case let .failure(error):
+            guard !(error is CancellationError) else { return }
+            editions = .failed(error.localizedDescription)
+        }
+    }
+
+    private nonisolated static func fetchDetail(
+        identifier: String,
+        from repository: any CatalogRepository
+    ) async -> WorkSummary? {
+        // Deliberately swallowed: the summary is still a correct, useful page,
+        // and a second error banner over one that already renders is noise.
+        try? await repository.work(identifier: identifier)
+    }
+
+    private nonisolated static func fetchEditions(
+        workID: UUID,
+        from repository: any CatalogRepository
+    ) async -> Result<[EditionSummary], Error> {
         do {
-            state = .loaded(try await repository.editions(workID: workID))
-        } catch is CancellationError {
-            return
+            return .success(try await repository.editions(workID: workID))
         } catch {
-            state = .failed(error.localizedDescription)
+            return .failure(error)
         }
     }
 }

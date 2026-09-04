@@ -192,7 +192,6 @@ private struct BibliographyPanel: View {
                 )
             }
         }
-        .accessibilityIdentifier("work.bibliography")
     }
 
     /// Two plain `Text`s rather than `LabeledContent`, which merges its label
@@ -283,7 +282,6 @@ private struct RightsPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .accessibilityIdentifier("work.rights")
         }
     }
 

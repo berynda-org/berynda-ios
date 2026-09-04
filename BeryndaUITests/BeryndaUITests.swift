@@ -55,12 +55,7 @@ final class BeryndaUITests: XCTestCase {
         // Contributor roles exist only on the detail record, so an "author"
         // row proves the thin list row was enriched rather than rendered as-is.
         let author = app.staticTexts["work.bibliography.author"]
-        if !author.waitForExistence(timeout: 5) {
-            print("BIBLIOGRAPHY-DIAGNOSTIC-START")
-            print(app.debugDescription)
-            print("BIBLIOGRAPHY-DIAGNOSTIC-END")
-            XCTFail("Bibliography author row missing; element tree printed above")
-        }
+        XCTAssertTrue(author.waitForExistence(timeout: 5))
         XCTAssertEqual(author.label, "Тарас Шевченко")
 
         let editor = app.staticTexts["work.bibliography.editor"]

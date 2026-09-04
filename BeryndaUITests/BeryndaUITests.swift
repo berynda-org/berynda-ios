@@ -1,6 +1,15 @@
 import XCTest
 
 final class BeryndaUITests: XCTestCase {
+    /// The edition identifiers `UITestRepository` serves. Interpolating the
+    /// `UUID` rather than hardcoding a string keeps the case matching whatever
+    /// `UUID.description` produces on both sides.
+    private enum EditionID {
+        static let readable = UUID(uuidString: "aaaaaaaa-1111-1111-1111-111111111111")!
+        static let restricted = UUID(uuidString: "bbbbbbbb-2222-2222-2222-222222222222")!
+        static let withoutFile = UUID(uuidString: "cccccccc-3333-3333-3333-333333333333")!
+    }
+
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
@@ -38,7 +47,11 @@ final class BeryndaUITests: XCTestCase {
     func testReadableEditionOpensAndTurnsPage() {
         openWork(named: "Кобзар")
 
-        let readButton = app.buttons["Читати видання"]
+        XCTAssertTrue(
+            app.staticTexts["work.edition.\(EditionID.readable)"]
+                .waitForExistence(timeout: 5)
+        )
+        let readButton = app.buttons["edition.read.\(EditionID.readable)"]
         XCTAssertTrue(readButton.waitForExistence(timeout: 5))
         readButton.tap()
 
@@ -76,11 +89,12 @@ final class BeryndaUITests: XCTestCase {
     func testRestrictedEditionExplainsWhyItCannotOpen() {
         openWork(named: "Лісова пісня")
 
-        XCTAssertTrue(
-            app.staticTexts["Читання обмежено правовласником"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertFalse(app.buttons["Читати видання"].exists)
+        let restriction = app.staticTexts["edition.restricted.\(EditionID.restricted)"]
+        XCTAssertTrue(restriction.waitForExistence(timeout: 5))
+        // The reason is server-supplied, so asserting it stays safe under
+        // localization; the read button must not exist at all.
+        XCTAssertEqual(restriction.label, "Читання обмежено правовласником")
+        XCTAssertFalse(app.buttons["edition.read.\(EditionID.restricted)"].exists)
     }
 
     func testEditionWithoutAFileDegradesSafely() {
@@ -91,11 +105,13 @@ final class BeryndaUITests: XCTestCase {
         XCTAssertTrue(work.waitForExistence(timeout: 5))
         work.tap()
 
+        // The fallback copy here is app-owned and will move into the String
+        // Catalog, so only its presence is asserted, by identifier.
         XCTAssertTrue(
-            app.staticTexts["Файл для читання недоступний"]
+            app.staticTexts["edition.restricted.\(EditionID.withoutFile)"]
                 .waitForExistence(timeout: 5)
         )
-        XCTAssertFalse(app.buttons["Читати видання"].exists)
+        XCTAssertFalse(app.buttons["edition.read.\(EditionID.withoutFile)"].exists)
     }
 
     func testSignInUnlocksProfileAndLibrary() {

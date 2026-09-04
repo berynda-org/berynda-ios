@@ -338,6 +338,7 @@ private struct EditionRow: View {
                 Text(edition.displayTitle)
                     .font(.headline)
                     .foregroundStyle(BeryndaColor.ink)
+                    .accessibilityIdentifier("work.edition.\(edition.id)")
                 if !metadata.isEmpty {
                     Text(metadata)
                         .font(.subheadline)
@@ -369,7 +370,6 @@ private struct EditionRow: View {
                 }
             }
         }
-        .accessibilityIdentifier("work.edition.\(edition.id)")
     }
 
     private var metadata: String {

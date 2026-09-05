@@ -1,6 +1,7 @@
 import BeryndaCore
 import Combine
 import Foundation
+import UIKit
 
 @MainActor
 final class EPUBPayload {
@@ -55,6 +56,10 @@ final class ReaderViewModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var prefetchTasks: [Int: Task<Void, Never>] = [:]
     private let pageCache = ReaderPageCache()
+    /// Protected temporary copy backing the export affordance, deleted when
+    /// the reader closes.
+    @Published private(set) var exportableDocument: URL?
+    private var exportTask: Task<Void, Never>?
     /// Set when the server answers a position save with `recorded: false`,
     /// i.e. it declined to record because the reader's history policy is off.
     private var serverDeclinedToRecord = false
@@ -78,6 +83,7 @@ final class ReaderViewModel: ObservableObject {
     deinit {
         pageTask?.cancel()
         saveTask?.cancel()
+        exportTask?.cancel()
         for task in prefetchTasks.values { task.cancel() }
     }
 
@@ -172,6 +178,75 @@ final class ReaderViewModel: ObservableObject {
         facingContent = Content(fetched)
     }
 
+    /// Deny-by-default, and only for a document the app actually holds whole:
+    /// per-page delivery never yields a complete file to hand over.
+    var canExportDocument: Bool {
+        guard info?.rights.canDownloadFile == true else { return false }
+        switch info?.resource {
+        case .fullPDF, .epub: return true
+        default: return false
+        }
+    }
+
+    var canPrintDocument: Bool {
+        guard info?.rights.canPrint == true, info?.resource == .fullPDF else { return false }
+        if case .pdf = content { return true }
+        return false
+    }
+
+    var exportFileName: String {
+        let title = info?.book.title ?? "Видання"
+        return "\(title).\(exportPathExtension)"
+    }
+
+    private var exportPathExtension: String {
+        info?.resource == .epub ? "epub" : "pdf"
+    }
+
+    /// Writes the in-hand document to protected temporary storage so the share
+    /// sheet has a file to offer. Runs once per reader, and only if the rights
+    /// actually allow it.
+    private func prepareExportIfPermitted() {
+        guard canExportDocument, exportableDocument == nil, exportTask == nil else { return }
+        let bytes: Data?
+        switch content {
+        case let .pdf(data, _): bytes = data
+        case let .epub(payload): bytes = payload.data
+        default: bytes = nil
+        }
+        guard let bytes else { return }
+        let id = fileID
+        let pathExtension = exportPathExtension
+        exportTask = Task { [weak self] in
+            let url = try? await ProtectedTemporaryFile.write(
+                bytes,
+                fileID: id,
+                pathExtension: pathExtension
+            )
+            await MainActor.run { self?.exportableDocument = url }
+        }
+    }
+
+    /// Printing is offered only for a full PDF the rights allow: a per-page
+    /// render is not the document, and the app must not assemble one.
+    func printDocument() {
+        guard canPrintDocument, case let .pdf(data, _) = content else { return }
+        let controller = UIPrintInteractionController.shared
+        let printInfo = UIPrintInfo.printInfo()
+        printInfo.outputType = .general
+        printInfo.jobName = info?.book.title ?? "Берында"
+        controller.printInfo = printInfo
+        controller.printingItem = data
+        controller.present(animated: true, completionHandler: nil)
+    }
+
+    func discardExportedDocument() {
+        exportTask?.cancel()
+        exportTask = nil
+        ProtectedTemporaryFile.remove(exportableDocument)
+        exportableDocument = nil
+    }
+
     var canGoBackward: Bool { currentPage > 1 && !pageIsLoading }
 
     var canGoForward: Bool {
@@ -209,6 +284,7 @@ final class ReaderViewModel: ObservableObject {
             let fetched = try await pageContent(info, page: currentPage)
             await pageCache.store(fetched, for: currentPage)
             content = Content(fetched)
+            prepareExportIfPermitted()
             prefetchNeighbours(around: currentPage, info: info)
         case .epub:
             guard (info.fileSizeBytes ?? 0) <= 100 * 1_024 * 1_024 else {
@@ -217,6 +293,7 @@ final class ReaderViewModel: ObservableObject {
             content = .epub(
                 EPUBPayload(data: try await repository.epubDocument(fileID: fileID))
             )
+            prepareExportIfPermitted()
         case .unsupported:
             throw ReaderFailure.unsupported
         }

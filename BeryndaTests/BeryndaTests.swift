@@ -419,6 +419,47 @@ final class BeryndaTests: XCTestCase {
         XCTAssertNil(model.facingContent)
     }
 
+    @MainActor
+    func testExportAndPrintAreOfferedForAPermittedFullDocument() async throws {
+        let repository = RightsReaderStub(
+            pageDelivery: "client_full",
+            canDownloadFile: true,
+            canPrint: true
+        )
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        XCTAssertTrue(model.canExportDocument)
+        XCTAssertTrue(model.canPrintDocument)
+    }
+
+    @MainActor
+    func testExportAndPrintAreWithheldWithoutTheRight() async throws {
+        let repository = RightsReaderStub(
+            pageDelivery: "client_full",
+            canDownloadFile: false,
+            canPrint: false
+        )
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        XCTAssertFalse(model.canExportDocument)
+        XCTAssertFalse(model.canPrintDocument)
+    }
+
+    @MainActor
+    func testPerPageDeliveryNeverOffersAWholeDocument() async throws {
+        // Even with the download right granted, per-page delivery means the
+        // app never holds the complete file, so it must not offer one.
+        let repository = RightsReaderStub(
+            pageDelivery: "client_per_page",
+            canDownloadFile: true,
+            canPrint: true
+        )
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        XCTAssertFalse(model.canExportDocument)
+        XCTAssertFalse(model.canPrintDocument)
+    }
+
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
@@ -745,5 +786,80 @@ private actor PagedReaderStub: ReaderRepository {
           "page_labels": []
         }
         """
+    }
+}
+
+/// Reader repository whose rights and delivery mode are configurable, for
+/// asserting that export and print stay deny-by-default.
+private actor RightsReaderStub: ReaderRepository {
+    private let pageDelivery: String
+    private let canDownloadFile: Bool
+    private let canPrint: Bool
+
+    init(pageDelivery: String, canDownloadFile: Bool, canPrint: Bool) {
+        self.pageDelivery = pageDelivery
+        self.canDownloadFile = canDownloadFile
+        self.canPrint = canPrint
+    }
+
+    func info(fileID: UUID) async throws -> ReaderInfo {
+        let json = """
+        {
+          "file_id": "44444444-4444-4444-4444-444444444444",
+          "edition_id": "33333333-3333-3333-3333-333333333333",
+          "work_id": "11111111-1111-1111-1111-111111111111",
+          "book": {"title": "Кобзар", "authors": []},
+          "mime_type": "application/pdf",
+          "rendering_mode": "pdf",
+          "page_delivery": "\(pageDelivery)",
+          "pages_extracted": true,
+          "split_pending": false,
+          "split_failed": false,
+          "has_toc": false,
+          "total_pages": 10,
+          "access_mode": "read_only",
+          "download_allowed": \(canDownloadFile),
+          "toc": [],
+          "reading_position": null,
+          "rights": {
+            "can_read": true,
+            "can_download_file": \(canDownloadFile),
+            "can_download_page": true,
+            "can_copy_text": true,
+            "can_print": \(canPrint),
+            "can_share": true,
+            "restriction_reason": null
+          },
+          "page_labels": []
+        }
+        """
+        return try JSONDecoder().decode(ReaderInfo.self, from: Data(json.utf8))
+    }
+
+    func text(fileID: UUID) async throws -> TextReaderContent { throw StubError.unsupported }
+    func epubDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+
+    func fullDocument(fileID: UUID) async throws -> Data { Self.pdfBytes }
+    func pagePDF(fileID: UUID, page: Int) async throws -> Data { Self.pdfBytes }
+    func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data {
+        Data([0xff, 0xd8, 0xff])
+    }
+
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool { true }
+
+    private static var pdfBytes: Data {
+        var data = Data("%PDF-".utf8)
+        data.append(Data(repeating: 0x20, count: 32))
+        return data
+    }
+
+    enum StubError: Error {
+        case unsupported
     }
 }

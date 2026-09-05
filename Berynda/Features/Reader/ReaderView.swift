@@ -13,8 +13,10 @@ struct ReaderView: View {
     @State private var showsAppearance = false
     @State private var draftPage = 1.0
     @State private var isScrubbing = false
-    @State private var textScale: CGFloat = 1
-    @State private var lineSpacingScale: CGFloat = 1
+    // Persisted, not per-presentation state: a reader who enlarges the text
+    // once should not have to do it again on the next book.
+    @AppStorage("reader.textScale") private var storedTextScale = 1.0
+    @AppStorage("reader.lineSpacingScale") private var storedLineSpacingScale = 1.0
     @State private var saveMessage: String?
     private let fallbackTitle: String
     private let library: LibraryViewModel
@@ -93,6 +95,28 @@ struct ReaderView: View {
                         }
                     }
                 }
+                // Both affordances are deny-by-default: they appear only when
+                // the API grants the right AND the whole document is actually
+                // in hand. Per-page delivery has no complete file to give.
+                if model.canExportDocument, let document = model.exportableDocument {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        ShareLink(
+                            item: document,
+                            preview: SharePreview(model.exportFileName)
+                        ) {
+                            Label("Зберегти файл", systemImage: "arrow.down.circle")
+                        }
+                        .accessibilityIdentifier("reader.download")
+                    }
+                }
+                if model.canPrintDocument {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Друк", systemImage: "printer") {
+                            model.printDocument()
+                        }
+                        .accessibilityIdentifier("reader.print")
+                    }
+                }
                 if account.state == .authenticated {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Закладка", systemImage: "bookmark") {
@@ -123,8 +147,8 @@ struct ReaderView: View {
         }
         .sheet(isPresented: $showsAppearance) {
             ReaderAppearanceSheet(
-                textScale: $textScale,
-                lineSpacingScale: $lineSpacingScale
+                textScale: textScaleBinding,
+                lineSpacingScale: lineSpacingScaleBinding
             )
         }
         .onChange(of: model.currentPage) { _, page in
@@ -151,6 +175,7 @@ struct ReaderView: View {
             Task { await model.releaseCachedPages() }
         }
         .onDisappear {
+            model.discardExportedDocument()
             Task {
                 await model.flushPosition()
                 await model.releaseCachedPages()
@@ -313,6 +338,23 @@ struct ReaderView: View {
         let prefix = model.pageLabel(for: page).map { "\($0) · " } ?? ""
         guard let total = model.info?.totalPages else { return "\(prefix)с. \(page)" }
         return "\(prefix)с. \(page) з \(total)"
+    }
+
+    private var textScale: CGFloat { CGFloat(storedTextScale) }
+    private var lineSpacingScale: CGFloat { CGFloat(storedLineSpacingScale) }
+
+    private var textScaleBinding: Binding<CGFloat> {
+        Binding(
+            get: { CGFloat(storedTextScale) },
+            set: { storedTextScale = Double($0) }
+        )
+    }
+
+    private var lineSpacingScaleBinding: Binding<CGFloat> {
+        Binding(
+            get: { CGFloat(storedLineSpacingScale) },
+            set: { storedLineSpacingScale = Double($0) }
+        )
     }
 
     private var shareURL: URL {

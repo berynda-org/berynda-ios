@@ -150,7 +150,11 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
         do {
             remoteContentBlocker = try await Self.makeRemoteContentBlocker()
             guard let data = payload.data else { throw EPUBReaderFailure.invalidFile }
-            let localURL = try await Self.writeProtectedTemporaryFile(data, fileID: fileID)
+            let localURL = try await ProtectedTemporaryFile.write(
+                data,
+                fileID: fileID,
+                pathExtension: "epub"
+            )
             payload.data = nil
             temporaryURL = localURL
             guard let readiumURL = FileURL(url: localURL) else {
@@ -245,36 +249,8 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
     }
 
     private func cleanupTemporaryFile() {
-        guard let temporaryURL else { return }
-        try? FileManager.default.removeItem(at: temporaryURL)
-        self.temporaryURL = nil
-    }
-
-    nonisolated private static func writeProtectedTemporaryFile(
-        _ data: Data,
-        fileID: UUID
-    ) async throws -> URL {
-        try await Task.detached(priority: .userInitiated) {
-            let manager = FileManager.default
-            let directory = manager.temporaryDirectory
-                .appendingPathComponent("org.berynda.ios", isDirectory: true)
-                .appendingPathComponent("reader", isDirectory: true)
-            try manager.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true,
-                attributes: [.protectionKey: FileProtectionType.complete]
-            )
-
-            var fileURL = directory.appendingPathComponent(
-                "\(fileID.uuidString.lowercased())-\(UUID().uuidString.lowercased()).epub",
-                isDirectory: false
-            )
-            try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            try fileURL.setResourceValues(values)
-            return fileURL
-        }.value
+        ProtectedTemporaryFile.remove(temporaryURL)
+        temporaryURL = nil
     }
 
     private static func makeRemoteContentBlocker() async throws -> WKContentRuleList {

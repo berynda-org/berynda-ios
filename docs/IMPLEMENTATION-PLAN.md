@@ -284,10 +284,17 @@ Review.
    a time, collapses to a single page at the end of a document, and is offered
    only where the app itself paginates — a full PDF is laid out by PDFKit, and
    text and publications reflow.
-10. **Reader feature parity:** rights-aware download/print affordances,
-    persistent appearance preferences, TXT paged mode and anchor navigation,
-    native publication TOC/location navigation, publication appearance, and
-    exact resume interoperability rather than approximate percentage restore.
+10. **Reader feature parity — partial:** rights-aware download and print
+    affordances are implemented, both deny-by-default and offered only for a
+    document the app holds whole — per-page delivery never yields a complete
+    file, so it offers neither. Exported bytes reuse the publication path's
+    protected temporary storage (`ProtectedTemporaryFile`, extracted so there
+    is one implementation rather than two) and are deleted when the reader
+    closes. Text size and line spacing now persist across readers and launches
+    instead of resetting each time. **Remaining:** TXT paged mode and anchor
+    navigation, native publication TOC/location navigation, publication
+    appearance controls, and exact resume interoperability rather than the
+    current approximate percentage restore.
 11. **Authentication UI:** login, registration, confirmation handoff, password
     reset, logout, relaunch persistence, and return to the action that prompted
     authentication while anonymous reading remains available.

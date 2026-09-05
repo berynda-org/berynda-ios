@@ -538,6 +538,20 @@ final class BeryndaTests: XCTestCase {
         XCTAssertTrue(model.canGoBackward)
     }
 
+    @MainActor
+    func testPublicationNeverOverwritesTheServerPositionWithAPageNumber() async throws {
+        let repository = PublicationReaderStub()
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        await model.flushPosition()
+
+        // A publication has no page of its own, and the web reader stores an
+        // epub_cfi for these. Sending "page 1" would destroy the reader's real
+        // position on every other client.
+        let attempts = await repository.saveAttempts
+        XCTAssertEqual(attempts, 0)
+    }
+
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
@@ -1012,6 +1026,76 @@ private actor PagedTextStub: ReaderRepository {
         progressPercent: Int?,
         totalPages: Int?
     ) async throws -> Bool { true }
+
+    enum StubError: Error {
+        case unsupported
+    }
+}
+
+/// Reader repository serving a publication, counting position saves so it can
+/// be asserted that none are sent.
+private actor PublicationReaderStub: ReaderRepository {
+    private(set) var saveAttempts = 0
+
+    func info(fileID: UUID) async throws -> ReaderInfo {
+        let json = """
+        {
+          "file_id": "44444444-4444-4444-4444-444444444444",
+          "edition_id": "33333333-3333-3333-3333-333333333333",
+          "work_id": "11111111-1111-1111-1111-111111111111",
+          "book": {"title": "Кобзар", "authors": []},
+          "mime_type": "application/epub+zip",
+          "file_size_bytes": 2048,
+          "rendering_mode": "epub",
+          "page_delivery": "client_full",
+          "pages_extracted": false,
+          "split_pending": false,
+          "split_failed": false,
+          "has_toc": false,
+          "total_pages": null,
+          "access_mode": "read_only",
+          "download_allowed": false,
+          "toc": [],
+          "reading_position": null,
+          "rights": {
+            "can_read": true,
+            "can_download_file": false,
+            "can_download_page": false,
+            "can_copy_text": true,
+            "can_print": false,
+            "can_share": true,
+            "restriction_reason": null
+          },
+          "page_labels": []
+        }
+        """
+        return try JSONDecoder().decode(ReaderInfo.self, from: Data(json.utf8))
+    }
+
+    func text(fileID: UUID) async throws -> TextReaderContent { throw StubError.unsupported }
+
+    func epubDocument(fileID: UUID) async throws -> Data {
+        var data = Data([0x50, 0x4b, 0x03, 0x04])
+        data.append(Data(repeating: 0x00, count: 32))
+        return data
+    }
+
+    func fullDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+    func pagePDF(fileID: UUID, page: Int) async throws -> Data { throw StubError.unsupported }
+    func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data {
+        throw StubError.unsupported
+    }
+
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool {
+        saveAttempts += 1
+        return true
+    }
 
     enum StubError: Error {
         case unsupported

@@ -298,8 +298,19 @@ Review.
     would shift every later page. The body is fetched once and paging is pure
     slicing; malformed offsets from the network are repaired rather than
     trusted. **Remaining:** anchor navigation, native publication TOC/location
-    navigation, publication appearance controls, and exact resume
-    interoperability rather than the current approximate percentage restore.
+    navigation, and publication appearance controls.
+
+    **Exact publication resume is blocked, and the plan item was wrong about
+    what is achievable.** The web reader stores `position_type: "epub_cfi"`
+    with an epub.js CFI and restores through `rendition.display(cfi)`. Readium
+    3.11.0 exposes `partialCFI` as a read-only accessor on `Locator.Locations`
+    and no navigator consumes it, so the iOS client can neither produce nor
+    resolve a full CFI. Until both clients can express the same position —
+    either a CFI implementation on iOS or a shared locator type in
+    `apps.reader.enums.PositionType`, which today allows only `page`,
+    `epub_cfi`, `char`, and `scroll` — publication position stays local to the
+    device. Sending anything else would overwrite a real cross-client position
+    with an invented one.
 11. **Authentication UI:** login, registration, confirmation handoff, password
     reset, logout, relaunch persistence, and return to the action that prompted
     authentication while anonymous reading remains available.

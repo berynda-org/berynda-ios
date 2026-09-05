@@ -509,6 +509,15 @@ final class ReaderViewModel: ObservableObject {
         let page = currentPage
         let total = info.totalPages
         await localPositions.save(page: page, totalPages: total, for: fileID)
+
+        // A publication has no page number of its own: `currentPage` never
+        // leaves 1. The web reader stores an `epub_cfi` for these, and Readium
+        // 3.11 neither produces nor resolves a full CFI (`partialCFI` is
+        // read-only and no navigator consumes it), so sending anything here
+        // would overwrite a real position with an invented page 1 and lose the
+        // reader's place on every other client. Publications stay local-only
+        // until both clients can express the same position.
+        guard info.resource != .epub else { return }
         guard await session.state() == .authenticated else { return }
         let progress = total.map { min(max(Int((Double(page) / Double(max($0, 1)) * 100).rounded()), 0), 100) }
         // A thrown error is a transient failure and says nothing about policy,

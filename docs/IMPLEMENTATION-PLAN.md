@@ -151,8 +151,9 @@ are accepted.
    backend route returning the collections that contain a work.
 2. **In progress.** Add authentication UI for login, registration confirmation, password reset,
    logout, session expiry, relaunch persistence, and return-to-action behavior.
-3. **In progress.** Implement reading-position persistence: quiet-interval PUT, background and
-   dismiss flush, privacy-disabled handling, local resume, and restart tests.
+3. **Complete.** Reading-position persistence: quiet-interval PUT, background
+   and dismiss flush, privacy-disabled handling for both the local policy and a
+   server `recorded: false` refusal, local resume, and restart tests.
 4. **In progress.** Replace the Library placeholder with Continue Reading, bibliography lists,
    quick add, list-item reader bookmarks, and saved public collections with
    duplicate-safe reconciliation.
@@ -261,9 +262,13 @@ Review.
    `/collections/<slug>/`, but no route returns the collections that contain a
    given work, so the link cannot be built client-side. It needs a public
    endpoint in `akrivonos/berynda` first.
-8. **Reader persistence:** authenticated position PUT, quiet-interval save,
-   background/dismiss flush, `recorded: false` and disabled-history behavior,
-   local resume serialization, and process-restart tests.
+8. **Reader persistence — implemented:** authenticated position PUT, one-second
+   quiet-interval save, background and dismiss flush, protected local resume
+   that survives a process restart, and both refusal paths. A locally known
+   disabled history and a server answering `recorded: false` are treated the
+   same way: the local resume copy is dropped and nothing further is sent for
+   the session. A thrown save is a transient failure, says nothing about
+   policy, and is retried.
 9. **Reader performance/resilience:** adjacent-page prefetch capped at two,
    bounded decoded-image/PDF cache, obsolete-request cancellation, lifecycle
    recovery, 200-page turn/memory tests, and iPad landscape spread mode.

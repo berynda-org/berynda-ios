@@ -140,6 +140,101 @@ final class BeryndaTests: XCTestCase {
         XCTAssertEqual(editions.count, 1)
     }
 
+    @MainActor
+    func testServerRefusalToRecordStopsLocalAndRemoteSaves() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let store = LocalReadingPositionStore(directory: directory)
+        let repository = ReaderPersistenceStub(recorded: false)
+        let model = try await makeReaderModel(repository: repository, store: store)
+
+        model.selectPage(2)
+        await model.flushPosition()
+
+        // The server keeps no history for this reader, so the client must not
+        // keep a local resume copy either.
+        let saved = await store.position(for: ReaderPersistenceStub.fileID)
+        XCTAssertNil(saved)
+
+        // And it must stop asking: a refusal holds for the rest of the session.
+        model.selectPage(3)
+        await model.flushPosition()
+        let attempts = await repository.saveAttempts
+        XCTAssertEqual(attempts, 1)
+    }
+
+    @MainActor
+    func testPositionIsKeptWhenTheServerRecordsIt() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let store = LocalReadingPositionStore(directory: directory)
+        let repository = ReaderPersistenceStub(recorded: true)
+        let model = try await makeReaderModel(repository: repository, store: store)
+
+        model.selectPage(2)
+        await model.flushPosition()
+
+        let saved = await store.position(for: ReaderPersistenceStub.fileID)
+        XCTAssertEqual(saved?.page, 2)
+    }
+
+    @MainActor
+    func testTransientSaveFailureIsNotTreatedAsAPolicyRefusal() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let store = LocalReadingPositionStore(directory: directory)
+        let repository = ReaderPersistenceStub(recorded: nil)
+        let model = try await makeReaderModel(repository: repository, store: store)
+
+        model.selectPage(2)
+        await model.flushPosition()
+
+        // A thrown error says nothing about the reader's history policy, so
+        // the local resume survives and the client keeps trying.
+        let saved = await store.position(for: ReaderPersistenceStub.fileID)
+        XCTAssertEqual(saved?.page, 2)
+
+        model.selectPage(3)
+        await model.flushPosition()
+        let attempts = await repository.saveAttempts
+        XCTAssertEqual(attempts, 2)
+    }
+
+    @MainActor
+    private func makeReaderModel(
+        repository: ReaderPersistenceStub,
+        store: LocalReadingPositionStore
+    ) async throws -> ReaderViewModel {
+        let authentication = UITestAuthenticationService()
+        let session = SessionController(
+            tokenStore: UITestTokenStore(),
+            authentication: authentication
+        )
+        _ = try await session.signIn(email: "reader@example.org", password: "password123")
+
+        let account = AccountViewModel(
+            session: session,
+            authentication: authentication,
+            repository: UITestAccountRepository(),
+            localPositions: store
+        )
+        let model = ReaderViewModel(
+            fileID: ReaderPersistenceStub.fileID,
+            repository: repository,
+            session: session,
+            account: account,
+            localPositions: store
+        )
+        await model.load()
+        return model
+    }
+
     private static func listRow() throws -> WorkSummary {
         let json = """
         {
@@ -301,4 +396,83 @@ private actor WorkDetailRepositoryStub: CatalogRepository {
     enum StubError: Error {
         case unsupported
     }
+}
+
+/// Reader repository that records how often a position save was attempted and
+/// what the server answered. `recorded: nil` throws instead, standing in for a
+/// transient network failure.
+private actor ReaderPersistenceStub: ReaderRepository {
+    static let fileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+
+    private let recorded: Bool?
+    private(set) var saveAttempts = 0
+
+    init(recorded: Bool?) {
+        self.recorded = recorded
+    }
+
+    func info(fileID: UUID) async throws -> ReaderInfo {
+        try JSONDecoder().decode(ReaderInfo.self, from: Data(Self.readerInfoJSON.utf8))
+    }
+
+    func text(fileID: UUID) async throws -> TextReaderContent {
+        try JSONDecoder().decode(
+            TextReaderContent.self,
+            from: Data(#"{"body":"Тестовий текст","page_offsets":[]}"#.utf8)
+        )
+    }
+
+    func epubDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+    func fullDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+    func pagePDF(fileID: UUID, page: Int) async throws -> Data { throw StubError.unsupported }
+    func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data {
+        throw StubError.unsupported
+    }
+
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool {
+        saveAttempts += 1
+        guard let recorded else { throw StubError.unsupported }
+        return recorded
+    }
+
+    enum StubError: Error {
+        case unsupported
+    }
+
+    static let readerInfoJSON = """
+    {
+      "file_id": "44444444-4444-4444-4444-444444444444",
+      "edition_id": "33333333-3333-3333-3333-333333333333",
+      "work_id": "11111111-1111-1111-1111-111111111111",
+      "book": {"title": "Енеїда", "authors": ["Іван Котляревський"]},
+      "mime_type": "text/plain",
+      "rendering_mode": "txt",
+      "page_delivery": "client_full",
+      "pages_extracted": false,
+      "split_pending": false,
+      "split_failed": false,
+      "has_toc": false,
+      "total_pages": 10,
+      "access_mode": "read_only",
+      "download_allowed": false,
+      "toc": [],
+      "reading_position": null,
+      "rights": {
+        "can_read": true,
+        "can_download_file": false,
+        "can_download_page": false,
+        "can_copy_text": true,
+        "can_print": false,
+        "can_share": true,
+        "restriction_reason": null
+      },
+      "page_labels": []
+    }
+    """
 }

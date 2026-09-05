@@ -40,6 +40,9 @@ final class ReaderViewModel: ObservableObject {
     private let localPositions: LocalReadingPositionStore
     private var pageTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    /// Set when the server answers a position save with `recorded: false`,
+    /// i.e. it declined to record because the reader's history policy is off.
+    private var serverDeclinedToRecord = false
 
     init(
         fileID: UUID,
@@ -212,7 +215,7 @@ final class ReaderViewModel: ObservableObject {
 
     private func persistPosition() async {
         guard let info, phase.isLoaded else { return }
-        guard account.profile?.readingHistoryEnabled != false else {
+        guard account.profile?.readingHistoryEnabled != false, !serverDeclinedToRecord else {
             await localPositions.clearAll()
             return
         }
@@ -221,13 +224,21 @@ final class ReaderViewModel: ObservableObject {
         await localPositions.save(page: page, totalPages: total, for: fileID)
         guard await session.state() == .authenticated else { return }
         let progress = total.map { min(max(Int((Double(page) / Double(max($0, 1)) * 100).rounded()), 0), 100) }
-        _ = try? await repository.savePosition(
+        // A thrown error is a transient failure and says nothing about policy,
+        // so only an explicit `recorded: false` counts as a refusal.
+        let recorded = (try? await repository.savePosition(
             fileID: fileID,
             positionType: "page",
             positionValue: String(page),
             progressPercent: progress,
             totalPages: total
-        )
+        )) ?? true
+        guard !recorded else { return }
+        // The server keeps no history for this reader, so neither do we: the
+        // local resume copy is dropped and nothing further is sent this
+        // session. Same treatment the locally-known disabled policy gets.
+        serverDeclinedToRecord = true
+        await localPositions.clearAll()
     }
 }
 

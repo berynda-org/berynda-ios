@@ -556,15 +556,15 @@ final class BeryndaTests: XCTestCase {
     @MainActor
     func testPublicationContentsFlattenNestedChaptersIntoIndentLevels() {
         let toc = [
-            Link(
+            ReadiumShared.Link(
                 href: "chapter1.xhtml",
                 title: "Розділ перший",
                 children: [
-                    Link(href: "chapter1.xhtml#s1", title: "Частина 1"),
-                    Link(href: "chapter1.xhtml#s2", title: "Частина 2"),
+                    ReadiumShared.Link(href: "chapter1.xhtml#s1", title: "Частина 1"),
+                    ReadiumShared.Link(href: "chapter1.xhtml#s2", title: "Частина 2"),
                 ]
             ),
-            Link(href: "chapter2.xhtml", title: "Розділ другий"),
+            ReadiumShared.Link(href: "chapter2.xhtml", title: "Розділ другий"),
         ]
 
         let entries = EPUBReaderController.flatten(toc)
@@ -579,8 +579,8 @@ final class BeryndaTests: XCTestCase {
     @MainActor
     func testPublicationContentsFallBackToTheHrefWhenATitleIsMissing() {
         let entries = EPUBReaderController.flatten([
-            Link(href: "nav.xhtml", title: nil),
-            Link(href: "blank.xhtml", title: "   "),
+            ReadiumShared.Link(href: "nav.xhtml", title: nil),
+            ReadiumShared.Link(href: "blank.xhtml", title: "   "),
         ])
 
         XCTAssertEqual(entries.map(\.title), ["nav.xhtml", "blank.xhtml"])
@@ -591,7 +591,7 @@ final class BeryndaTests: XCTestCase {
         // The same href at two depths must not collide, or the list would
         // drop rows.
         let entries = EPUBReaderController.flatten([
-            Link(href: "a.xhtml", title: "A", children: [Link(href: "a.xhtml", title: "A again")]),
+            ReadiumShared.Link(href: "a.xhtml", title: "A", children: [ReadiumShared.Link(href: "a.xhtml", title: "A again")]),
         ])
 
         XCTAssertEqual(Set(entries.map(\.id)).count, entries.count)

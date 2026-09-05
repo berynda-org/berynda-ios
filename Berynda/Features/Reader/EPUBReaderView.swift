@@ -167,7 +167,7 @@ struct PublicationTOCEntry: Identifiable, Hashable {
     let id: String
     let title: String
     let level: Int
-    let link: Link
+    let link: ReadiumShared.Link
 
     static func == (lhs: PublicationTOCEntry, rhs: PublicationTOCEntry) -> Bool {
         lhs.id == rhs.id
@@ -363,7 +363,10 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
 
     /// Readium nests TOC links; the sheet shows one list, so depth becomes an
     /// indent level rather than a hierarchy the reader has to expand.
-    static func flatten(_ links: [Link], level: Int = 0) -> [PublicationTOCEntry] {
+    static func flatten(
+        _ links: [ReadiumShared.Link],
+        level: Int = 0
+    ) -> [PublicationTOCEntry] {
         links.flatMap { link -> [PublicationTOCEntry] in
             let title = link.title?.trimmingCharacters(in: .whitespacesAndNewlines)
             let entry = PublicationTOCEntry(

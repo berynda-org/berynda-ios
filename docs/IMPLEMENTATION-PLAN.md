@@ -269,9 +269,18 @@ Review.
    same way: the local resume copy is dropped and nothing further is sent for
    the session. A thrown save is a transient failure, says nothing about
    policy, and is retried.
-9. **Reader performance/resilience:** adjacent-page prefetch capped at two,
-   bounded decoded-image/PDF cache, obsolete-request cancellation, lifecycle
-   recovery, 200-page turn/memory tests, and iPad landscape spread mode.
+9. **Reader performance/resilience — implemented except iPad spread mode:**
+   `ReaderPageCache` bounds retained pages by both a page count (8) and a byte
+   ceiling (24 MB), evicting least-recently-used, so a long session cannot grow
+   without limit and paging back one page no longer re-downloads it. Prefetch
+   warms at most the next and previous page and is cancelled the moment the
+   reader moves elsewhere. Backgrounding and memory warnings release the cache
+   while keeping the visible page; returning re-fetches only if that page was
+   dropped. A page request past the last page is now clamped before it is
+   issued — previously it left `pageIsLoading` true forever and both page
+   buttons went dead. Covered by a 200-page turn test asserting bounded cache
+   size and bounded per-page request counts. **iPad landscape spread mode
+   remains.**
 10. **Reader feature parity:** rights-aware download/print affordances,
     persistent appearance preferences, TXT paged mode and anchor navigation,
     native publication TOC/location navigation, publication appearance, and

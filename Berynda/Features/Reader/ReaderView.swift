@@ -131,10 +131,30 @@ struct ReaderView: View {
             draftPage = Double(page)
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase != .active else { return }
-            Task { await model.flushPosition() }
+            if phase == .active {
+                // Coming back from a release: re-fetch only if the page on
+                // screen was dropped while the app was away.
+                Task { await model.recoverIfNeeded() }
+                return
+            }
+            Task {
+                await model.flushPosition()
+                await model.releaseCachedPages()
+            }
         }
-        .onDisappear { Task { await model.flushPosition() } }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: UIApplication.didReceiveMemoryWarningNotification
+            )
+        ) { _ in
+            Task { await model.releaseCachedPages() }
+        }
+        .onDisappear {
+            Task {
+                await model.flushPosition()
+                await model.releaseCachedPages()
+            }
+        }
         .alert("Бібліотека", isPresented: Binding(
             get: { saveMessage != nil },
             set: { if !$0 { saveMessage = nil } }

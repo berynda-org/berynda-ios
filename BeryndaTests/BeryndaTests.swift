@@ -206,11 +206,123 @@ final class BeryndaTests: XCTestCase {
         XCTAssertEqual(attempts, 2)
     }
 
+    func testPageCacheEvictsLeastRecentlyUsedBeyondItsPageLimit() async {
+        let cache = ReaderPageCache(maximumPages: 3, maximumBytes: 10 * 1_024 * 1_024)
+        for page in 1...3 {
+            await cache.store(.image(Data(repeating: 0x41, count: 16)), for: page)
+        }
+        // Touching page 1 makes page 2 the least recently used.
+        _ = await cache.content(for: 1)
+        await cache.store(.image(Data(repeating: 0x41, count: 16)), for: 4)
+
+        let cached = await cache.cachedPages
+        XCTAssertEqual(cached, [1, 3, 4])
+    }
+
+    func testPageCacheHonoursItsByteCeiling() async {
+        let cache = ReaderPageCache(maximumPages: 100, maximumBytes: 1_000)
+        for page in 1...10 {
+            await cache.store(.image(Data(repeating: 0x41, count: 400)), for: page)
+        }
+
+        let bytes = await cache.byteCount
+        let count = await cache.pageCount
+        XCTAssertLessThanOrEqual(bytes, 1_000)
+        XCTAssertEqual(count, 2)
+    }
+
+    func testPageCacheSkipsAnEntryLargerThanTheWholeBudget() async {
+        let cache = ReaderPageCache(maximumPages: 8, maximumBytes: 1_000)
+        await cache.store(.image(Data(repeating: 0x41, count: 4_000)), for: 1)
+
+        let count = await cache.pageCount
+        let bytes = await cache.byteCount
+        XCTAssertEqual(count, 0)
+        XCTAssertEqual(bytes, 0)
+    }
+
+    @MainActor
+    func testTurningTwoHundredPagesKeepsMemoryAndRequestsBounded() async throws {
+        let repository = PagedReaderStub(totalPages: 200)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        for page in 2...200 {
+            model.selectPage(page)
+            await model.settle()
+        }
+
+        // The cache is what stops a long session from growing without limit.
+        let cachedPages = await model.cachedPageCountForTesting
+        XCTAssertLessThanOrEqual(cachedPages, 8)
+
+        // Every page fetched at most a bounded number of times: once on
+        // display, plus at most one prefetch of the same page from a
+        // neighbour. Unbounded refetching would show up here as a large max.
+        let perPage = await repository.requestsPerPage
+        let worst = perPage.values.max() ?? 0
+        XCTAssertLessThanOrEqual(worst, 3, "page requested \(worst) times: \(perPage)")
+    }
+
+    @MainActor
+    func testPagingBackToACachedPageDoesNotRefetchIt() async throws {
+        let repository = PagedReaderStub(totalPages: 10)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        model.selectPage(2)
+        await model.settle()
+        let afterFirstVisit = await repository.requestsPerPage[2] ?? 0
+
+        model.selectPage(3)
+        await model.settle()
+        model.selectPage(2)
+        await model.settle()
+
+        let afterReturn = await repository.requestsPerPage[2] ?? 0
+        XCTAssertEqual(afterReturn, afterFirstVisit)
+    }
+
+    @MainActor
+    func testAPageRequestPastTheLastPageDoesNotWedgeNavigation() async throws {
+        let repository = PagedReaderStub(totalPages: 10)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        model.selectPage(999)
+        await model.settle()
+
+        // The request is clamped, so the completion guard matches and the
+        // loading flag clears; previously it stayed true and both page
+        // buttons went permanently dead.
+        XCTAssertEqual(model.currentPage, 10)
+        XCTAssertFalse(model.pageIsLoading)
+        XCTAssertTrue(model.canGoBackward)
+    }
+
+    @MainActor
+    func testReleasingCachedPagesKeepsTheVisiblePageOnScreen() async throws {
+        let repository = PagedReaderStub(totalPages: 10)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        model.selectPage(4)
+        await model.settle()
+        await model.releaseCachedPages()
+
+        let emptied = await model.cachedPageCountForTesting
+        XCTAssertEqual(emptied, 0)
+
+        await model.recoverIfNeeded()
+        // Content was never cleared, so there is nothing to recover and no
+        // redundant refetch is issued.
+        XCTAssertNotNil(model.content)
+    }
+
     @MainActor
     private func makeReaderModel(
-        repository: ReaderPersistenceStub,
-        store: LocalReadingPositionStore
+        repository: any ReaderRepository,
+        store: LocalReadingPositionStore?
     ) async throws -> ReaderViewModel {
+        // Not `let store = store ?? …`: a local shadowing a parameter cannot
+        // reference it in its own initializer.
+        let positionStore = try store ?? makeTemporaryPositionStore()
         let authentication = UITestAuthenticationService()
         let session = SessionController(
             tokenStore: UITestTokenStore(),
@@ -222,17 +334,24 @@ final class BeryndaTests: XCTestCase {
             session: session,
             authentication: authentication,
             repository: UITestAccountRepository(),
-            localPositions: store
+            localPositions: positionStore
         )
         let model = ReaderViewModel(
             fileID: ReaderPersistenceStub.fileID,
             repository: repository,
             session: session,
             account: account,
-            localPositions: store
+            localPositions: positionStore
         )
         await model.load()
         return model
+    }
+
+    private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return LocalReadingPositionStore(directory: directory)
     }
 
     private static func listRow() throws -> WorkSummary {
@@ -475,4 +594,84 @@ private actor ReaderPersistenceStub: ReaderRepository {
       "page_labels": []
     }
     """
+}
+
+/// Reader repository serving per-page PDFs and counting how often each page was
+/// asked for, so prefetch and cache behaviour can be asserted exactly.
+private actor PagedReaderStub: ReaderRepository {
+    static let fileID = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+
+    private let totalPages: Int
+    private(set) var requestsPerPage: [Int: Int] = [:]
+
+    init(totalPages: Int) {
+        self.totalPages = totalPages
+    }
+
+    func info(fileID: UUID) async throws -> ReaderInfo {
+        try JSONDecoder().decode(
+            ReaderInfo.self,
+            from: Data(Self.readerInfoJSON(totalPages: totalPages).utf8)
+        )
+    }
+
+    func text(fileID: UUID) async throws -> TextReaderContent { throw StubError.unsupported }
+    func epubDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+    func fullDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+
+    func pagePDF(fileID: UUID, page: Int) async throws -> Data {
+        requestsPerPage[page, default: 0] += 1
+        var data = Data("%PDF-".utf8)
+        data.append(Data(repeating: 0x20, count: 64))
+        return data
+    }
+
+    func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data {
+        throw StubError.unsupported
+    }
+
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool { true }
+
+    enum StubError: Error {
+        case unsupported
+    }
+
+    static func readerInfoJSON(totalPages: Int) -> String {
+        """
+        {
+          "file_id": "44444444-4444-4444-4444-444444444444",
+          "edition_id": "33333333-3333-3333-3333-333333333333",
+          "work_id": "11111111-1111-1111-1111-111111111111",
+          "book": {"title": "Кобзар", "authors": []},
+          "mime_type": "application/pdf",
+          "rendering_mode": "pdf",
+          "page_delivery": "client_per_page",
+          "pages_extracted": true,
+          "split_pending": false,
+          "split_failed": false,
+          "has_toc": false,
+          "total_pages": \(totalPages),
+          "access_mode": "read_only",
+          "download_allowed": false,
+          "toc": [],
+          "reading_position": null,
+          "rights": {
+            "can_read": true,
+            "can_download_file": false,
+            "can_download_page": true,
+            "can_copy_text": true,
+            "can_print": false,
+            "can_share": true,
+            "restriction_reason": null
+          },
+          "page_labels": []
+        }
+        """
+    }
 }

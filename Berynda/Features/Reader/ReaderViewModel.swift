@@ -18,6 +18,15 @@ final class ReaderViewModel: ObservableObject {
         case pdf(Data, tracksDocumentPages: Bool)
         case image(Data)
         case epub(EPUBPayload)
+
+        init(_ page: ReaderPageContent) {
+            switch page {
+            case let .pdf(data, tracksDocumentPages):
+                self = .pdf(data, tracksDocumentPages: tracksDocumentPages)
+            case let .image(data):
+                self = .image(data)
+            }
+        }
     }
 
     enum Phase {
@@ -40,6 +49,8 @@ final class ReaderViewModel: ObservableObject {
     private let localPositions: LocalReadingPositionStore
     private var pageTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    private var prefetchTasks: [Int: Task<Void, Never>] = [:]
+    private let pageCache = ReaderPageCache()
     /// Set when the server answers a position save with `recorded: false`,
     /// i.e. it declined to record because the reader's history policy is off.
     private var serverDeclinedToRecord = false
@@ -63,6 +74,7 @@ final class ReaderViewModel: ObservableObject {
     deinit {
         pageTask?.cancel()
         saveTask?.cancel()
+        for task in prefetchTasks.values { task.cancel() }
     }
 
     func load() async {
@@ -100,8 +112,11 @@ final class ReaderViewModel: ObservableObject {
 
         guard info.renderingMode == .pdf, info.resource != .fullPDF else { return }
         pageTask?.cancel()
+        // `bounded`, not `page`: a request past the last page used to leave
+        // `pageIsLoading` true forever, because the completion guard compares
+        // against the clamped `currentPage` and never matched.
         pageTask = Task { [weak self] in
-            await self?.reloadPage(page)
+            await self?.reloadPage(bounded)
         }
     }
 
@@ -137,7 +152,10 @@ final class ReaderViewModel: ObservableObject {
             let response = try await repository.text(fileID: fileID)
             content = .text(response.body, isMarkdown: isMarkdown)
         case .fullPDF, .pagePDF, .pageImage:
-            content = try await pdfContent(info, page: currentPage)
+            let fetched = try await pageContent(info, page: currentPage)
+            await pageCache.store(fetched, for: currentPage)
+            content = Content(fetched)
+            prefetchNeighbours(around: currentPage, info: info)
         case .epub:
             guard (info.fileSizeBytes ?? 0) <= 100 * 1_024 * 1_024 else {
                 throw APIError.responseTooLarge
@@ -150,7 +168,7 @@ final class ReaderViewModel: ObservableObject {
         }
     }
 
-    private func pdfContent(_ info: ReaderInfo, page: Int) async throws -> Content {
+    private func pageContent(_ info: ReaderInfo, page: Int) async throws -> ReaderPageContent {
         switch info.resource {
         case .fullPDF:
             return .pdf(
@@ -173,14 +191,25 @@ final class ReaderViewModel: ObservableObject {
 
     private func reloadPage(_ requestedPage: Int) async {
         guard let info else { return }
+
+        if let cached = await pageCache.content(for: requestedPage) {
+            guard !Task.isCancelled, currentPage == requestedPage else { return }
+            content = Content(cached)
+            pageIsLoading = false
+            prefetchNeighbours(around: requestedPage, info: info)
+            return
+        }
+
         pageIsLoading = true
         defer {
             if currentPage == requestedPage { pageIsLoading = false }
         }
         do {
-            let nextContent = try await pdfContent(info, page: requestedPage)
+            let fetched = try await pageContent(info, page: requestedPage)
+            await pageCache.store(fetched, for: requestedPage)
             guard !Task.isCancelled, currentPage == requestedPage else { return }
-            content = nextContent
+            content = Content(fetched)
+            prefetchNeighbours(around: requestedPage, info: info)
         } catch is CancellationError {
             return
         } catch {
@@ -188,6 +217,73 @@ final class ReaderViewModel: ObservableObject {
             phase = .failed(error.localizedDescription)
         }
     }
+
+    /// Warms at most the next and previous page — two, never a window that
+    /// grows with reading speed — and only for pages not already cached.
+    /// Prefetches are cancelled the moment the reader moves somewhere else, so
+    /// a fast run of page turns cannot leave a queue of stale downloads behind.
+    private func prefetchNeighbours(around page: Int, info: ReaderInfo) {
+        let upperBound = info.totalPages
+        let candidates = [page + 1, page - 1].filter { candidate in
+            guard candidate >= 1 else { return false }
+            if let upperBound, candidate > upperBound { return false }
+            return true
+        }
+
+        for (candidate, task) in prefetchTasks where !candidates.contains(candidate) {
+            task.cancel()
+            prefetchTasks[candidate] = nil
+        }
+
+        for candidate in candidates where prefetchTasks[candidate] == nil {
+            prefetchTasks[candidate] = Task { [weak self] in
+                await self?.prefetch(candidate, info: info)
+            }
+        }
+    }
+
+    private func prefetch(_ page: Int, info: ReaderInfo) async {
+        defer { prefetchTasks[page] = nil }
+        guard await pageCache.content(for: page) == nil else { return }
+        guard let fetched = try? await pageContent(info, page: page) else { return }
+        guard !Task.isCancelled else { return }
+        await pageCache.store(fetched, for: page)
+    }
+
+    private func cancelPrefetches() {
+        for task in prefetchTasks.values { task.cancel() }
+        prefetchTasks.removeAll()
+    }
+
+    /// Backgrounding and memory pressure both drop the cache: every page is
+    /// re-fetchable, so it is the cheapest thing to give up. The page on
+    /// screen is kept, so returning to the app does not blank the reader.
+    func releaseCachedPages() async {
+        cancelPrefetches()
+        await pageCache.removeAll()
+    }
+
+    /// Re-fetches the current page if the reader came back to a view whose
+    /// content was released while it was away.
+    func recoverIfNeeded() async {
+        guard case .none = content, phase.isLoaded, info != nil else { return }
+        await reloadPage(currentPage)
+    }
+
+#if DEBUG
+    /// Awaits the in-flight page load and every prefetch it started, so tests
+    /// observe a settled reader instead of racing it.
+    func settle() async {
+        await pageTask?.value
+        for task in Array(prefetchTasks.values) {
+            await task.value
+        }
+    }
+
+    var cachedPageCountForTesting: Int {
+        get async { await pageCache.pageCount }
+    }
+#endif
 
     private func restoredPage(from info: ReaderInfo, local: LocalReadingPosition?) -> Int {
         if let initialPage {

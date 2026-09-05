@@ -6,6 +6,7 @@ import UIKit
 struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @StateObject private var model: ReaderViewModel
     @ObservedObject private var account: AccountViewModel
     @State private var showsContents = false
@@ -168,6 +169,22 @@ struct ReaderView: View {
 
     @ViewBuilder
     private var readerContent: some View {
+        GeometryReader { proxy in
+            // A spread needs a regular width and a landscape shape: two pages
+            // on a compact or portrait screen would be too small to read.
+            let spread = horizontalSizeClass == .regular
+                && proxy.size.width > proxy.size.height
+                && model.supportsSpread
+            spreadContent
+                // GeometryReader aligns top-leading and does not stretch its
+                // child, so the reader must be told to fill the pane it
+                // measured or it would shrink-wrap its content.
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .task(id: spread) { await model.setSpreadEnabled(spread) }
+        }
+    }
+
+    private var spreadContent: some View {
         VStack(spacing: 0) {
             Group {
                 switch model.content {
@@ -180,13 +197,37 @@ struct ReaderView: View {
                         lineSpacingScale: lineSpacingScale
                     )
                 case let .pdf(data, tracksDocumentPages):
-                    PDFReaderView(
-                        data: data,
-                        currentPage: $model.currentPage,
-                        tracksDocumentPages: tracksDocumentPages
-                    )
+                    if case let .pdf(facing, _)? = model.facingContent {
+                        HStack(spacing: 0) {
+                            PDFReaderView(
+                                data: data,
+                                currentPage: $model.currentPage,
+                                tracksDocumentPages: false
+                            )
+                            PDFReaderView(
+                                data: facing,
+                                currentPage: .constant(1),
+                                tracksDocumentPages: false
+                            )
+                        }
+                        .accessibilityIdentifier("reader.spread")
+                    } else {
+                        PDFReaderView(
+                            data: data,
+                            currentPage: $model.currentPage,
+                            tracksDocumentPages: tracksDocumentPages
+                        )
+                    }
                 case let .image(data):
-                    ServerPageImage(data: data)
+                    if case let .image(facing)? = model.facingContent {
+                        HStack(spacing: 0) {
+                            ServerPageImage(data: data)
+                            ServerPageImage(data: facing)
+                        }
+                        .accessibilityIdentifier("reader.spread")
+                    } else {
+                        ServerPageImage(data: data)
+                    }
                 case let .epub(payload):
                     EPUBReaderView(
                         payload: payload,
@@ -236,7 +277,7 @@ struct ReaderView: View {
 
             HStack(spacing: 18) {
                 Button("Попередня", systemImage: "chevron.left") {
-                    model.selectPage(model.currentPage - 1)
+                    model.selectPage(model.currentPage - model.pageStep)
                 }
                 .labelStyle(.iconOnly)
                 .disabled(!model.canGoBackward)
@@ -251,7 +292,7 @@ struct ReaderView: View {
                 }
 
                 Button("Наступна", systemImage: "chevron.right") {
-                    model.selectPage(model.currentPage + 1)
+                    model.selectPage(model.currentPage + model.pageStep)
                 }
                 .labelStyle(.iconOnly)
                 .disabled(!model.canGoForward)

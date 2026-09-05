@@ -269,7 +269,7 @@ Review.
    same way: the local resume copy is dropped and nothing further is sent for
    the session. A thrown save is a transient failure, says nothing about
    policy, and is retried.
-9. **Reader performance/resilience — implemented except iPad spread mode:**
+9. **Reader performance/resilience — implemented:**
    `ReaderPageCache` bounds retained pages by both a page count (8) and a byte
    ceiling (24 MB), evicting least-recently-used, so a long session cannot grow
    without limit and paging back one page no longer re-downloads it. Prefetch
@@ -279,8 +279,11 @@ Review.
    dropped. A page request past the last page is now clamped before it is
    issued — previously it left `pageIsLoading` true forever and both page
    buttons went dead. Covered by a 200-page turn test asserting bounded cache
-   size and bounded per-page request counts. **iPad landscape spread mode
-   remains.**
+   size and bounded per-page request counts. iPad landscape spread mode shows
+   two facing pages on a regular-width landscape screen, advances two pages at
+   a time, collapses to a single page at the end of a document, and is offered
+   only where the app itself paginates — a full PDF is laid out by PDFKit, and
+   text and publications reflow.
 10. **Reader feature parity:** rights-aware download/print affordances,
     persistent appearance preferences, TXT paged mode and anchor navigation,
     native publication TOC/location navigation, publication appearance, and

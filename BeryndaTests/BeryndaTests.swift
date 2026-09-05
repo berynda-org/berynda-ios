@@ -347,6 +347,78 @@ final class BeryndaTests: XCTestCase {
         return model
     }
 
+    @MainActor
+    func testSpreadShowsAFacingPageAndAdvancesTwoAtATime() async throws {
+        let repository = PagedReaderStub(totalPages: 10)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        XCTAssertTrue(model.supportsSpread)
+        XCTAssertEqual(model.pageStep, 1)
+
+        await model.setSpreadEnabled(true)
+        XCTAssertNotNil(model.facingContent)
+        XCTAssertEqual(model.pageStep, 2)
+
+        model.selectPage(model.currentPage + model.pageStep)
+        await model.settle()
+        XCTAssertEqual(model.currentPage, 3)
+        XCTAssertNotNil(model.facingContent)
+    }
+
+    @MainActor
+    func testSpreadDropsTheFacingPageAtTheEndOfTheDocument() async throws {
+        let repository = PagedReaderStub(totalPages: 4)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+        await model.setSpreadEnabled(true)
+
+        model.selectPage(4)
+        await model.settle()
+
+        // Nothing faces the last page, so the spread collapses to one page
+        // and forward navigation stops.
+        XCTAssertNil(model.facingContent)
+        XCTAssertEqual(model.pageStep, 1)
+        XCTAssertFalse(model.canGoForward)
+    }
+
+    @MainActor
+    func testForwardStopsWhenTheSpreadAlreadyShowsTheLastPage() async throws {
+        let repository = PagedReaderStub(totalPages: 4)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+        await model.setSpreadEnabled(true)
+
+        model.selectPage(3)
+        await model.settle()
+
+        // Pages 3 and 4 are both on screen, so there is nowhere further to go.
+        XCTAssertNotNil(model.facingContent)
+        XCTAssertFalse(model.canGoForward)
+    }
+
+    @MainActor
+    func testDisablingSpreadClearsTheFacingPage() async throws {
+        let repository = PagedReaderStub(totalPages: 10)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        await model.setSpreadEnabled(true)
+        XCTAssertNotNil(model.facingContent)
+
+        await model.setSpreadEnabled(false)
+        XCTAssertNil(model.facingContent)
+        XCTAssertEqual(model.pageStep, 1)
+    }
+
+    @MainActor
+    func testTextReaderNeverOffersASpread() async throws {
+        let repository = ReaderPersistenceStub(recorded: true)
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        // Text reflows, so there is no facing page to show.
+        XCTAssertFalse(model.supportsSpread)
+        await model.setSpreadEnabled(true)
+        XCTAssertNil(model.facingContent)
+    }
+
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)

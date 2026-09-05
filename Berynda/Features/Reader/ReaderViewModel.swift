@@ -40,6 +40,10 @@ final class ReaderViewModel: ObservableObject {
     @Published private(set) var content: Content?
     @Published private(set) var pageIsLoading = false
     @Published var currentPage = 1
+    /// The page facing `currentPage` in spread mode; `nil` in single-page mode
+    /// or when the spread would run past the end of the document.
+    @Published private(set) var facingContent: Content?
+    private(set) var isSpreadEnabled = false
 
     let fileID: UUID
     private let initialPage: Int?
@@ -120,11 +124,61 @@ final class ReaderViewModel: ObservableObject {
         }
     }
 
+    /// Two pages side by side only where the app itself paginates. A full PDF
+    /// is laid out by PDFKit, and text and publications reflow, so neither has
+    /// a facing page to show.
+    var supportsSpread: Bool {
+        guard let info else { return false }
+        return info.renderingMode == .pdf && (info.resource == .pagePDF || info.resource == .pageImage)
+    }
+
+    /// Pages advance two at a time once a spread is on screen, so the reader
+    /// does not see the same page again as the left half of the next spread.
+    var pageStep: Int { facingContent == nil ? 1 : 2 }
+
+    /// Called by the view when the size class or orientation changes.
+    func setSpreadEnabled(_ enabled: Bool) async {
+        guard enabled != isSpreadEnabled else { return }
+        isSpreadEnabled = enabled
+        guard let info else { return }
+        if enabled {
+            await loadFacingPage(for: currentPage, info: info)
+        } else {
+            facingContent = nil
+        }
+    }
+
+    private func loadFacingPage(for page: Int, info: ReaderInfo) async {
+        guard isSpreadEnabled, supportsSpread else {
+            facingContent = nil
+            return
+        }
+        let facing = page + 1
+        if let total = info.totalPages, facing > total {
+            facingContent = nil
+            return
+        }
+        if let cached = await pageCache.content(for: facing) {
+            guard currentPage == page else { return }
+            facingContent = Content(cached)
+            return
+        }
+        guard let fetched = try? await pageContent(info, page: facing) else {
+            facingContent = nil
+            return
+        }
+        await pageCache.store(fetched, for: facing)
+        guard currentPage == page else { return }
+        facingContent = Content(fetched)
+    }
+
     var canGoBackward: Bool { currentPage > 1 && !pageIsLoading }
 
     var canGoForward: Bool {
         guard !pageIsLoading, let total = info?.totalPages else { return false }
-        return currentPage < total
+        // In spread mode the step is two, so a spread whose right half is
+        // already the last page has nowhere further to go.
+        return currentPage + pageStep <= total
     }
 
     var contents: [ReaderContentsItem] {
@@ -196,6 +250,7 @@ final class ReaderViewModel: ObservableObject {
             guard !Task.isCancelled, currentPage == requestedPage else { return }
             content = Content(cached)
             pageIsLoading = false
+            await loadFacingPage(for: requestedPage, info: info)
             prefetchNeighbours(around: requestedPage, info: info)
             return
         }
@@ -209,6 +264,7 @@ final class ReaderViewModel: ObservableObject {
             await pageCache.store(fetched, for: requestedPage)
             guard !Task.isCancelled, currentPage == requestedPage else { return }
             content = Content(fetched)
+            await loadFacingPage(for: requestedPage, info: info)
             prefetchNeighbours(around: requestedPage, info: info)
         } catch is CancellationError {
             return
@@ -224,7 +280,8 @@ final class ReaderViewModel: ObservableObject {
     /// a fast run of page turns cannot leave a queue of stale downloads behind.
     private func prefetchNeighbours(around page: Int, info: ReaderInfo) {
         let upperBound = info.totalPages
-        let candidates = [page + 1, page - 1].filter { candidate in
+        let ahead = facingContent == nil ? page + 1 : page + 2
+        let candidates = [ahead, page - 1].filter { candidate in
             guard candidate >= 1 else { return false }
             if let upperBound, candidate > upperBound { return false }
             return true
@@ -260,6 +317,7 @@ final class ReaderViewModel: ObservableObject {
     /// screen is kept, so returning to the app does not blank the reader.
     func releaseCachedPages() async {
         cancelPrefetches()
+        facingContent = nil
         await pageCache.removeAll()
     }
 

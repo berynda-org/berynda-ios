@@ -5,6 +5,8 @@ public enum APIEndpoint: Sendable, Equatable {
     case worksFiltered(search: String?, page: Int, readableOnly: Bool, language: String?)
     case work(slug: String)
     case editions(workID: UUID)
+    case workCollections(workID: UUID)
+    case recommendedWorks(limit: Int)
     case accountProfile
     case bibliographyLists
     case bibliographyQuickAdd
@@ -51,6 +53,13 @@ public enum APIEndpoint: Sendable, Equatable {
             path = "works/\(Self.encodePathSegment(slug))/"
         case let .editions(workID):
             path = "works/\(workID.uuidString.lowercased())/editions/"
+        case let .workCollections(workID):
+            path = "works/\(workID.uuidString.lowercased())/collections/"
+        case let .recommendedWorks(limit):
+            path = "works/recommended/"
+            // Clamped client-side too, so a caller cannot make the request the
+            // server will only reject or silently bound.
+            queryItems.append(.init(name: "limit", value: String(min(max(limit, 1), 48))))
         case .accountProfile:
             path = "auth/me/"
         case .bibliographyLists:

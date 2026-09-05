@@ -20,6 +20,9 @@ final class CatalogViewModel: ObservableObject {
     @Published var query = ""
     @Published var readableOnly = false
     @Published var languageFilter: String?
+    /// Server-ranked shelf shown above an unfiltered catalog. Empty is normal
+    /// and not an error: it simply means nothing is being suggested.
+    @Published private(set) var recommended: [WorkSummary] = []
     private let repository: any CatalogRepository
     private let recentlyViewed: RecentlyViewedStore?
     private var searchTask: Task<Void, Never>?
@@ -33,6 +36,14 @@ final class CatalogViewModel: ObservableObject {
     }
 
     deinit { searchTask?.cancel() }
+
+    /// Loaded once per screen rather than per search: the shelf does not
+    /// depend on the query, and refetching it on every keystroke would be
+    /// pure waste.
+    func loadRecommendedIfNeeded() async {
+        guard recommended.isEmpty else { return }
+        recommended = (try? await repository.recommended(limit: 12)) ?? []
+    }
 
     func load() async {
         loadGeneration += 1

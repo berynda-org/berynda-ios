@@ -258,9 +258,10 @@ Review.
    catalog request never completes — only then, since a 403 or 404 is a real
    answer and stale rows would imply those works are still available. That
    history follows the reading-history privacy setting: with it off nothing is
-   written and anything stored is dropped. **Recommendations are blocked:** the
-   API exposes no recommendation route, and inventing a client-side ranking
-   would present the app's guess as the catalog's judgement.
+   written and anything stored is dropped. Recommendations are served by
+   `/works/recommended/`, shown above an unfiltered catalog only. The server
+   ranks the work, never the reader, so the shelf is the same for everyone and
+   reveals nothing about what anyone has read.
 7. **Work and edition completion — implemented except collection links:** the
    detail page now enriches a thin catalog row with the full work record
    (contributors by role, original title, literary form, genres, topics,
@@ -271,11 +272,12 @@ Review.
    id with the web client's hash, so a work looks identical in the catalog,
    the detail header, and collection strips; editions have their own
    loading/empty/restricted/retry states with fixtures. True selected-work
-   columns on iPad were already delivered with slice 4. **Collection links
-   remain blocked:** the API exposes `/collections/` and
-   `/collections/<slug>/`, but no route returns the collections that contain a
-   given work, so the link cannot be built client-side. It needs a public
-   endpoint in `akrivonos/berynda` first.
+   columns on iPad were already delivered with slice 4. Collection membership is served by
+   `/works/<id>/collections/` and shown as a panel with the save action the
+   catalog shelves already offer. The rows do not navigate: there is no
+   collection screen in the app yet, and implying navigation that does not
+   exist would be worse than showing the membership plainly. A collection
+   detail screen remains.
 8. **Reader persistence — implemented:** authenticated position PUT, one-second
    quiet-interval save, background and dismiss flush, protected local resume
    that survives a process restart, and both refusal paths. A locally known
@@ -318,17 +320,17 @@ Review.
     blocks and so trades away selection across block boundaries; that
     trade-off should be decided rather than assumed.
 
-    **Exact publication resume is blocked, and the plan item was wrong about
-    what is achievable.** The web reader stores `position_type: "epub_cfi"`
-    with an epub.js CFI and restores through `rendition.display(cfi)`. Readium
-    3.11.0 exposes `partialCFI` as a read-only accessor on `Locator.Locations`
-    and no navigator consumes it, so the iOS client can neither produce nor
-    resolve a full CFI. Until both clients can express the same position —
-    either a CFI implementation on iOS or a shared locator type in
-    `apps.reader.enums.PositionType`, which today allows only `page`,
-    `epub_cfi`, `char`, and `scroll` — publication position stays local to the
-    device. Sending anything else would overwrite a real cross-client position
-    with an invented one.
+    Publication resume is now cross-client. The API gained a `locator` position
+    type (`apps.reader.locators`) carrying `href`, `progression`,
+    `total_progression`, and an optional `cfi`: each client writes what it can
+    produce and reads what it understands, falling back to `total_progression`,
+    which every renderer can approximate. This client writes no `cfi` — Readium
+    3.11 exposes only a `partialCFI`, which is not what an epub.js client can
+    resolve, so writing one would look like interoperability while producing
+    something the other reader cannot use — but it preserves a `cfi` written by
+    the web reader across a round trip. Restoring prefers the exact resource and
+    falls back to overall progress.
+
 11. **Authentication UI:** login, registration, confirmation handoff, password
     reset, logout, relaunch persistence, and return to the action that prompted
     authentication while anonymous reading remains available.

@@ -78,6 +78,7 @@ private struct CatalogLoadedView: View {
             .onChange(of: model.languageFilter) { _, _ in model.searchChanged() }
             .task {
                 if case .idle = model.state { await model.load() }
+                await model.loadRecommendedIfNeeded()
                 if environment.library.publicCollections.isEmpty {
                     await environment.library.loadPublicCollections()
                 }
@@ -151,6 +152,9 @@ struct TabletCatalogColumn: View {
         .onChange(of: model.query) { _, _ in model.searchChanged() }
         .onChange(of: model.readableOnly) { _, _ in model.searchChanged() }
         .onChange(of: model.languageFilter) { _, _ in model.searchChanged() }
+        // No recommended shelf here: the iPad master column is a narrow list
+        // that does not render one, so fetching it would be a request whose
+        // result is never shown.
         .task { if case .idle = model.state { await model.load() } }
     }
 }
@@ -168,6 +172,13 @@ private struct WorkList: View {
                     ForEach(collections.filter(\.isFeatured)) { collection in
                         CollectionShelf(collection: collection)
                     }
+                }
+            }
+            // Only above an unfiltered catalog: a shelf that ignores the
+            // reader's query would be noise next to their own search.
+            if model.query.isEmpty, !model.recommended.isEmpty {
+                Section("Рекомендовані") {
+                    RecommendedShelf(works: model.recommended)
                 }
             }
             Section {
@@ -343,6 +354,50 @@ private struct RecentlyViewedList: View {
             .background(BeryndaColor.paper)
         }
         .accessibilityIdentifier("catalog.offline-fallback")
+    }
+}
+
+/// Horizontal shelf of server-ranked works.
+///
+/// Nothing here is personalised: the server ranks only the work, so this shows
+/// every reader the same shelf and reveals nothing about what anyone has read.
+private struct RecommendedShelf: View {
+    let works: [WorkSummary]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(alignment: .top, spacing: 14) {
+                ForEach(works) { work in
+                    NavigationLink(value: CatalogDestination.work(work)) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            BeryndaBookCover(
+                                title: work.title,
+                                imageURL: work.coverImageURL,
+                                design: work.coverDesign,
+                                width: 64,
+                                height: 92
+                            )
+                            Text(work.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(BeryndaColor.ink)
+                                .lineLimit(2)
+                                .frame(width: 96, alignment: .leading)
+                            if let author = work.authors.first?.displayName {
+                                Text(author)
+                                    .font(.caption2)
+                                    .foregroundStyle(BeryndaColor.mutedInk)
+                                    .lineLimit(1)
+                                    .frame(width: 96, alignment: .leading)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("catalog.recommended.\(work.id)")
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .accessibilityIdentifier("catalog.recommended")
     }
 }
 

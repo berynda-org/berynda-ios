@@ -13,8 +13,10 @@ struct EPUBReaderView: View {
         payload: EPUBPayload,
         fileID: UUID,
         initialProgressPercent: Int?,
+        initialLocator: ReadingLocator?,
         allowsCopy: Bool,
         allowsShare: Bool,
+        onLocatorChange: @escaping @MainActor (ReadingLocator) -> Void,
         onRetry: @escaping @MainActor () -> Void
     ) {
         _controller = StateObject(
@@ -22,6 +24,8 @@ struct EPUBReaderView: View {
                 payload: payload,
                 fileID: fileID,
                 initialProgressPercent: initialProgressPercent,
+                initialLocator: initialLocator,
+                onLocatorChange: onLocatorChange,
                 allowsCopy: allowsCopy,
                 allowsShare: allowsShare,
                 onRetry: onRetry
@@ -228,6 +232,8 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
     private let payload: EPUBPayload
     private let fileID: UUID
     private let initialProgressPercent: Int?
+    private let initialLocator: ReadingLocator?
+    private let onLocatorChange: @MainActor (ReadingLocator) -> Void
     private let allowsCopy: Bool
     private let allowsShare: Bool
     private let onRetry: @MainActor () -> Void
@@ -250,6 +256,8 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
         payload: EPUBPayload,
         fileID: UUID,
         initialProgressPercent: Int?,
+        initialLocator: ReadingLocator?,
+        onLocatorChange: @escaping @MainActor (ReadingLocator) -> Void,
         allowsCopy: Bool,
         allowsShare: Bool,
         onRetry: @escaping @MainActor () -> Void
@@ -257,6 +265,8 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
         self.payload = payload
         self.fileID = fileID
         self.initialProgressPercent = initialProgressPercent
+        self.initialLocator = initialLocator
+        self.onLocatorChange = onLocatorChange
         self.allowsCopy = allowsCopy
         self.allowsShare = allowsShare
         self.onRetry = onRetry
@@ -296,8 +306,13 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
                 throw EPUBReaderFailure.invalidFile
             }
 
+            // A stored locator restores exactly; a percentage only lands near
+            // where the reader stopped, so it is the fallback rather than the
+            // first choice.
             let initialLocation: Locator?
-            if let percent = initialProgressPercent, percent > 0 {
+            if let restored = await Self.locate(initialLocator, in: publication) {
+                initialLocation = restored
+            } else if let percent = initialProgressPercent, percent > 0 {
                 initialLocation = await publication.locate(
                     progression: min(max(Double(percent) / 100, 0), 1)
                 )
@@ -343,8 +358,12 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
     }
 
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator) {
-        guard let progression = locator.locations.totalProgression else { return }
-        progressPercent = min(max(Int((progression * 100).rounded()), 0), 100)
+        if let progression = locator.locations.totalProgression {
+            progressPercent = min(max(Int((progression * 100).rounded()), 0), 100)
+        }
+        // Reported even without a total progression: the href and in-resource
+        // progression alone still restore the reader's place.
+        onLocatorChange(Self.readingLocator(from: locator))
     }
 
     func navigator(_ navigator: Navigator, presentError error: NavigatorError) {
@@ -412,6 +431,41 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
     func applyPreferences() {
         guard case let .ready(navigator) = phase else { return }
         navigator.submitPreferences(EPUBPreferences(fontSize: fontSizeScale))
+    }
+
+    /// Translates a Readium locator into the cross-client shape. The `cfi`
+    /// stays empty: Readium 3.11 exposes only a `partialCFI`, which is the
+    /// right-hand side of a CFI without the spine-item reference and is not
+    /// what an epub.js client can resolve. Writing it would look like
+    /// interoperability while producing something the other reader cannot use.
+    static func readingLocator(from locator: Locator) -> ReadingLocator {
+        ReadingLocator(
+            href: locator.href.string,
+            progression: locator.locations.progression,
+            totalProgression: locator.locations.totalProgression
+        )
+    }
+
+    /// Resolves a stored locator against this publication, preferring the exact
+    /// resource and falling back to overall progress — which is what a locator
+    /// written by a client using a different position model will carry.
+    static func locate(
+        _ locator: ReadingLocator?,
+        in publication: Publication
+    ) async -> Locator? {
+        guard let locator else { return nil }
+        if let href = locator.href, !href.isEmpty {
+            if var resolved = await publication.locate(ReadiumShared.Link(href: href)) {
+                if let progression = locator.progression {
+                    resolved.locations.progression = progression
+                }
+                return resolved
+            }
+        }
+        if let total = locator.totalProgression {
+            return await publication.locate(progression: min(max(total, 0), 1))
+        }
+        return nil
     }
 
     private func cleanupTemporaryFile() {

@@ -68,6 +68,8 @@ final class ReaderViewModel: ObservableObject {
     /// Set when the server answers a position save with `recorded: false`,
     /// i.e. it declined to record because the reader's history policy is off.
     private var serverDeclinedToRecord = false
+    /// Latest position reported by the publication renderer, if any.
+    private var publicationLocator: ReadingLocator?
 
     init(
         fileID: UUID,
@@ -317,6 +319,14 @@ final class ReaderViewModel: ObservableObject {
         ReaderNavigation.pageLabel(for: page, in: info?.pageLabels ?? [])
     }
 
+    /// Called by the publication reader as the reader moves. Cheap: it only
+    /// records the position, leaving the quiet-interval save to decide when to
+    /// send it.
+    func publicationDidMove(to locator: ReadingLocator) {
+        publicationLocator = locator
+        schedulePositionSave()
+    }
+
     func flushPosition() async {
         saveTask?.cancel()
         saveTask = nil
@@ -510,15 +520,33 @@ final class ReaderViewModel: ObservableObject {
         let total = info.totalPages
         await localPositions.save(page: page, totalPages: total, for: fileID)
 
-        // A publication has no page number of its own: `currentPage` never
-        // leaves 1. The web reader stores an `epub_cfi` for these, and Readium
-        // 3.11 neither produces nor resolves a full CFI (`partialCFI` is
-        // read-only and no navigator consumes it), so sending anything here
-        // would overwrite a real position with an invented page 1 and lose the
-        // reader's place on every other client. Publications stay local-only
-        // until both clients can express the same position.
-        guard info.resource != .epub else { return }
         guard await session.state() == .authenticated else { return }
+
+        // A publication has no page number of its own — `currentPage` never
+        // leaves 1 — so it sends a locator, the shape the web reader can also
+        // read. Until the renderer reports one there is nothing to send:
+        // writing a page number here is what used to destroy the reader's
+        // position on every other client.
+        if info.resource == .epub {
+            guard let locator = publicationLocator,
+                  locator.isRestorable,
+                  let value = locator.encoded()
+            else { return }
+            let recordedLocator = (try? await repository.savePosition(
+                fileID: fileID,
+                positionType: "locator",
+                positionValue: value,
+                progressPercent: locator.totalProgression.map {
+                    min(max(Int(($0 * 100).rounded()), 0), 100)
+                },
+                totalPages: nil
+            )) ?? true
+            if !recordedLocator {
+                serverDeclinedToRecord = true
+                await localPositions.clearAll()
+            }
+            return
+        }
         let progress = total.map { min(max(Int((Double(page) / Double(max($0, 1)) * 100).rounded()), 0), 100) }
         // A thrown error is a transient failure and says nothing about policy,
         // so only an explicit `recorded: false` counts as a refusal.

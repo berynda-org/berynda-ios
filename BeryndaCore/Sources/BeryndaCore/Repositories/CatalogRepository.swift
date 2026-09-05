@@ -10,9 +10,20 @@ public protocol CatalogRepository: Sendable {
     ) async throws -> PaginatedResponse<WorkSummary>
     func work(identifier: String) async throws -> WorkSummary
     func editions(workID: UUID) async throws -> [EditionSummary]
+    /// Public collections that contain this work.
+    func collections(workID: UUID) async throws -> [PublicCollectionSummary]
+    /// A shelf of works worth opening. Not personalised — the server ranks
+    /// only the work, so every reader sees the same thing.
+    func recommended(limit: Int) async throws -> [WorkSummary]
 }
 
 public extension CatalogRepository {
+    // Defaulted so the UI-test and unit-test doubles do not each have to
+    // restate a discovery surface they do not exercise.
+    func collections(workID: UUID) async throws -> [PublicCollectionSummary] { [] }
+
+    func recommended(limit: Int) async throws -> [WorkSummary] { [] }
+
     func works(
         search: String?,
         page: Int,
@@ -57,6 +68,14 @@ public struct LiveCatalogRepository: CatalogRepository {
     public func editions(workID: UUID) async throws -> [EditionSummary] {
         let response: EditionCollection = try await client.request(.editions(workID: workID))
         return response.values
+    }
+
+    public func collections(workID: UUID) async throws -> [PublicCollectionSummary] {
+        try await client.request(.workCollections(workID: workID))
+    }
+
+    public func recommended(limit: Int) async throws -> [WorkSummary] {
+        try await client.request(.recommendedWorks(limit: limit))
     }
 }
 

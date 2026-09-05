@@ -42,4 +42,32 @@ final class ModelDecodingTests: XCTestCase {
         let url = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "json"))
         return try JSONDecoder().decode(T.self, from: Data(contentsOf: url))
     }
+    func testCollectionSummarySurvivesANullDescription() throws {
+        // `Collection.description` is a nullable column the API serialises
+        // verbatim, so one collection without a description must not fail the
+        // whole response and empty the shelf.
+        let json = #"""
+        {
+          "id": "77777777-7777-7777-7777-777777777777",
+          "slug": "poetry",
+          "name": "Поезія",
+          "description": null,
+          "category": null,
+          "is_featured": true,
+          "cover_image_url": null,
+          "work_count": 3,
+          "featured_works": []
+        }
+        """#
+        let collection = try JSONDecoder().decode(
+            PublicCollectionSummary.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertEqual(collection.slug, "poetry")
+        XCTAssertEqual(collection.description, "")
+        XCTAssertEqual(collection.category, "")
+        XCTAssertTrue(collection.isFeatured)
+    }
+
 }

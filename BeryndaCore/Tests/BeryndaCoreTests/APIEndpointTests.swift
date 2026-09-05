@@ -85,4 +85,32 @@ final class APIEndpointTests: XCTestCase {
             "https://berynda.org/api/v1/works/folder%2Fname%252Fchild/"
         )
     }
+    func testWorkCollectionsPath() throws {
+        let id = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+        let url = try XCTUnwrap(
+            APIEndpoint.workCollections(workID: id).url(relativeTo: baseURL)
+        )
+        XCTAssertEqual(
+            url.absoluteString,
+            "https://berynda.org/api/v1/works/11111111-1111-1111-1111-111111111111/collections/"
+        )
+    }
+
+    func testRecommendedWorksClampsItsLimit() throws {
+        func limit(_ requested: Int) throws -> String? {
+            let url = try XCTUnwrap(
+                APIEndpoint.recommendedWorks(limit: requested).url(relativeTo: baseURL)
+            )
+            return URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "limit" })?.value
+        }
+
+        XCTAssertEqual(try limit(12), "12")
+        // Clamped here as well as on the server, so a caller cannot send a
+        // request the server will only reject or silently bound.
+        XCTAssertEqual(try limit(9_999), "48")
+        XCTAssertEqual(try limit(0), "1")
+        XCTAssertEqual(try limit(-5), "1")
+    }
+
 }

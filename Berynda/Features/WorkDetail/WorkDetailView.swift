@@ -21,6 +21,9 @@ struct WorkDetailView: View {
                 summaryText
                 BibliographyPanel(work: work, isEnriching: model.isEnriching)
                 RightsPanel(work: work)
+                if !model.collections.isEmpty {
+                    CollectionsPanel(collections: model.collections)
+                }
 
                 Text("Видання")
                     .font(.title2.bold())
@@ -260,6 +263,74 @@ private struct BibliographyPanel: View {
         case "editor": count == 1 ? "Редактор" : "Редактори"
         case "illustrator": count == 1 ? "Ілюстрації" : "Ілюстрації"
         default: role
+        }
+    }
+}
+
+// MARK: - Collections
+
+/// The public collections a work appears in.
+///
+/// Names only, with the save action the catalog shelves already offer. There
+/// is no collection screen in the app yet, so tapping a row would have to lead
+/// nowhere — better to show the membership plainly than to imply navigation
+/// that does not exist.
+private struct CollectionsPanel: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    let collections: [PublicCollectionSummary]
+    @State private var message: String?
+
+    var body: some View {
+        BeryndaPanel {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("У колекціях", systemImage: "square.stack")
+                    .font(.headline)
+                    .foregroundStyle(BeryndaColor.ink)
+
+                ForEach(collections) { collection in
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(collection.name)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(BeryndaColor.ink)
+                            if !collection.description.isEmpty {
+                                Text(collection.description)
+                                    .font(.caption)
+                                    .foregroundStyle(BeryndaColor.mutedInk)
+                                    .lineLimit(2)
+                            }
+                        }
+                        Spacer(minLength: 12)
+                        Button("Зберегти") {
+                            Task {
+                                let result = await environment.library.setCollectionSaved(
+                                    collection,
+                                    saved: true
+                                )
+                                if result == .signInRequired {
+                                    environment.requireAuthentication(
+                                        for: .saveCollection(collection)
+                                    )
+                                } else {
+                                    message = result.message
+                                }
+                            }
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .disabled(environment.library.isMutating)
+                    }
+                    .accessibilityIdentifier("work.collection.\(collection.slug)")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .alert("Колекція", isPresented: Binding(
+            get: { message != nil },
+            set: { if !$0 { message = nil } }
+        )) {
+            Button("Гаразд", role: .cancel) {}
+        } message: {
+            Text(message ?? "")
         }
     }
 }

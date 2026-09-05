@@ -104,6 +104,23 @@ public struct PublicCollectionSummary: Codable, Identifiable, Sendable, Equatabl
         case workCount = "work_count"
         case featuredWorks = "featured_works"
     }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        slug = try container.decode(String.self, forKey: .slug)
+        name = try container.decode(String.self, forKey: .name)
+        // `Collection.description` and `.category` are nullable columns the API
+        // serialises verbatim, so a single collection with no description would
+        // otherwise fail the whole response and empty the shelf.
+        // `try?` on `decode` covers both a null value and an absent key.
+        description = (try? container.decode(String.self, forKey: .description)) ?? ""
+        category = (try? container.decode(String.self, forKey: .category)) ?? ""
+        isFeatured = (try? container.decode(Bool.self, forKey: .isFeatured)) ?? false
+        coverImageURL = try container.decodeIfPresent(URL.self, forKey: .coverImageURL)
+        workCount = (try? container.decode(Int.self, forKey: .workCount)) ?? 0
+        featuredWorks = (try? container.decode([CollectionWork].self, forKey: .featuredWorks)) ?? []
+    }
 }
 
 public struct CollectionWork: Codable, Identifiable, Sendable, Equatable {

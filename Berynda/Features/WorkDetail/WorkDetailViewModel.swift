@@ -17,6 +17,9 @@ final class WorkDetailViewModel: ObservableObject {
     /// Enrichment is a progressive improvement, never a gate: if it fails the
     /// page still shows the summary and the editions.
     @Published private(set) var isEnriching = false
+    /// Public collections this work belongs to. Absent is the normal case, so
+    /// a failure here is silent — the page is complete without it.
+    @Published private(set) var collections: [PublicCollectionSummary] = []
 
     private let repository: any CatalogRepository
 
@@ -40,7 +43,9 @@ final class WorkDetailViewModel: ObservableObject {
             ? Self.fetchDetail(identifier: identifier, from: repository)
             : nil
         async let editionOutcome = Self.fetchEditions(workID: id, from: repository)
-        let (detailed, outcome) = await (detail, editionOutcome)
+        async let collectionList = Self.fetchCollections(workID: id, from: repository)
+        let (detailed, outcome, collectionRows) = await (detail, editionOutcome, collectionList)
+        collections = collectionRows
 
         if let detailed, detailed.id == id {
             work = detailed
@@ -73,6 +78,15 @@ final class WorkDetailViewModel: ObservableObject {
         // Deliberately swallowed: the summary is still a correct, useful page,
         // and a second error banner over one that already renders is noise.
         try? await repository.work(identifier: identifier)
+    }
+
+    private nonisolated static func fetchCollections(
+        workID: UUID,
+        from repository: any CatalogRepository
+    ) async -> [PublicCollectionSummary] {
+        // Silent on failure: a work page is correct and useful without the
+        // collections it happens to appear in.
+        ((try? await repository.collections(workID: workID)) ?? [])
     }
 
     private nonisolated static func fetchEditions(

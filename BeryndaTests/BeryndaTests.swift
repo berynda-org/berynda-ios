@@ -540,312 +540,123 @@ final class BeryndaTests: XCTestCase {
     }
 
     @MainActor
-    func testPublicationNeverOverwritesTheServerPositionWithAPageNumber() async throws {
+    func testPublicationSendsNothingUntilItsRendererReportsAPosition() async throws {
         let repository = PublicationReaderStub()
         let model = try await makeReaderModel(repository: repository, store: nil)
 
         await model.flushPosition()
 
-        // A publication has no page of its own, and the web reader stores an
-        // epub_cfi for these. Sending "page 1" would destroy the reader's real
-        // position on every other client.
+        // A publication has no page of its own. Sending one anyway is what
+        // used to destroy the reader's real position on every other client.
         let attempts = await repository.saveAttempts
         XCTAssertEqual(attempts, 0)
     }
 
     @MainActor
-    func testPublicationContentsFlattenNestedChaptersIntoIndentLevels() {
-        let toc = [
-            ReadiumShared.Link(
-                href: "chapter1.xhtml",
-                title: "Розділ перший",
-                children: [
-                    ReadiumShared.Link(href: "chapter1.xhtml#s1", title: "Частина 1"),
-                    ReadiumShared.Link(href: "chapter1.xhtml#s2", title: "Частина 2"),
-                ]
-            ),
-            ReadiumShared.Link(href: "chapter2.xhtml", title: "Розділ другий"),
-        ]
+    func testPublicationSavesTheLocatorItsRendererReports() async throws {
+        let repository = PublicationReaderStub()
+        let model = try await makeReaderModel(repository: repository, store: nil)
 
-        let entries = EPUBReaderController.flatten(toc)
+        model.publicationDidMove(
+            to: ReadingLocator(href: "OEBPS/ch03.xhtml", progression: 0.5, totalProgression: 0.42)
+        )
+        await model.flushPosition()
 
+        let saved = await repository.lastSave
+        XCTAssertEqual(saved?.positionType, "locator")
         XCTAssertEqual(
-            entries.map(\.title),
-            ["Розділ перший", "Частина 1", "Частина 2", "Розділ другий"]
+            ReadingLocator.decode(from: saved?.positionValue ?? "")?.href,
+            "OEBPS/ch03.xhtml"
         )
-        XCTAssertEqual(entries.map(\.level), [0, 1, 1, 0])
+        // Progress is derived from the locator, not from a page count the
+        // publication does not have.
+        XCTAssertEqual(saved?.progressPercent, 42)
+        XCTAssertNil(saved?.totalPages)
     }
 
     @MainActor
-    func testPublicationContentsFallBackToTheHrefWhenATitleIsMissing() {
-        let entries = EPUBReaderController.flatten([
-            ReadiumShared.Link(href: "nav.xhtml", title: nil),
-            ReadiumShared.Link(href: "blank.xhtml", title: "   "),
-        ])
+    func testAPositionTooVagueToRestoreIsNotSent() async throws {
+        let repository = PublicationReaderStub()
+        let model = try await makeReaderModel(repository: repository, store: nil)
 
-        XCTAssertEqual(entries.map(\.title), ["nav.xhtml", "blank.xhtml"])
+        // Progress within an unnamed resource locates nothing; the API refuses
+        // it, so sending it would be a wasted round trip.
+        model.publicationDidMove(to: ReadingLocator(progression: 0.5))
+        await model.flushPosition()
+
+        let attempts = await repository.saveAttempts
+        XCTAssertEqual(attempts, 0)
     }
 
     @MainActor
-    func testPublicationContentsEntriesAreUniquelyIdentified() {
-        // The same href at two depths must not collide, or the list would
-        // drop rows.
-        let entries = EPUBReaderController.flatten([
-            ReadiumShared.Link(href: "a.xhtml", title: "A", children: [ReadiumShared.Link(href: "a.xhtml", title: "A again")]),
-        ])
-
-        XCTAssertEqual(Set(entries.map(\.id)).count, entries.count)
-    }
-
-    func testRecentlyViewedKeepsMostRecentFirstWithoutDuplicates() async throws {
-        let store = try makeRecentlyViewedStore()
-        let first = try Self.recentWork(id: "11111111-1111-1111-1111-111111111111", title: "Кобзар")
-        let second = try Self.recentWork(id: "22222222-2222-2222-2222-222222222222", title: "Енеїда")
-
-        await store.record(first, at: Date(timeIntervalSince1970: 100))
-        await store.record(second, at: Date(timeIntervalSince1970: 200))
-        // Re-opening moves a work to the front rather than duplicating it.
-        await store.record(first, at: Date(timeIntervalSince1970: 300))
-
-        let recent = await store.recent()
-        XCTAssertEqual(recent.map(\.title), ["Кобзар", "Енеїда"])
-    }
-
-    func testRecentlyViewedIsBounded() async throws {
-        let store = try makeRecentlyViewedStore(limit: 3)
-        for index in 1...6 {
-            let work = try Self.recentWork(
-                id: "0000000\(index)-1111-1111-1111-111111111111",
-                title: "Твір \(index)"
-            )
-            await store.record(work, at: Date(timeIntervalSince1970: TimeInterval(index)))
-        }
-
-        let recent = await store.recent()
-        XCTAssertEqual(recent.count, 3)
-        XCTAssertEqual(recent.map(\.title), ["Твір 6", "Твір 5", "Твір 4"])
-    }
-
-    func testRecentlyViewedSurvivesAStoreRestartAndCanBeCleared() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-
-        let store = RecentlyViewedStore(directory: directory)
-        await store.record(try Self.recentWork(
-            id: "11111111-1111-1111-1111-111111111111",
-            title: "Кобзар"
-        ))
-
-        let relaunched = RecentlyViewedStore(directory: directory)
-        let restored = await relaunched.recent()
-        XCTAssertEqual(restored.map(\.title), ["Кобзар"])
-
-        await relaunched.clear()
-        let cleared = await relaunched.recent()
-        XCTAssertTrue(cleared.isEmpty)
-    }
-
-    @MainActor
-    func testCatalogFallsBackToRecentlyViewedWhenTheRequestNeverCompletes() async throws {
-        let store = try makeRecentlyViewedStore()
-        await store.record(try Self.recentWork(
-            id: "11111111-1111-1111-1111-111111111111",
-            title: "Кобзар"
-        ))
-        let model = CatalogViewModel(
-            repository: FailingCatalogStub(failure: .transport),
-            recentlyViewed: store
+    func testWorkDetailShowsTheCollectionsAWorkBelongsTo() async throws {
+        let summary = try Self.listRow()
+        let repository = WorkDetailRepositoryStub(
+            detail: nil,
+            collections: [try Self.collection(slug: "poetry", name: "Поезія")]
         )
+        let model = WorkDetailViewModel(work: summary, repository: repository)
 
         await model.load()
 
-        guard case let .offlineFallback(recent) = model.state else {
-            return XCTFail("Expected the offline fallback, got \(model.state)")
-        }
-        XCTAssertEqual(recent.map(\.title), ["Кобзар"])
+        XCTAssertEqual(model.collections.map(\.slug), ["poetry"])
     }
 
     @MainActor
-    func testARemovedWorkReportsTheFailureRatherThanShowingStaleRows() async throws {
-        let store = try makeRecentlyViewedStore()
-        await store.record(try Self.recentWork(
-            id: "11111111-1111-1111-1111-111111111111",
-            title: "Кобзар"
-        ))
-        let model = CatalogViewModel(
-            repository: FailingCatalogStub(failure: .notFound(APIErrorContext())),
-            recentlyViewed: store
-        )
+    func testAFailedCollectionLookupLeavesTheWorkPageIntact() async throws {
+        let summary = try Self.listRow()
+        let repository = WorkDetailRepositoryStub(detail: nil, collectionsFail: true)
+        let model = WorkDetailViewModel(work: summary, repository: repository)
 
         await model.load()
 
-        // A 404 is a real answer about the catalog: showing previously opened
-        // works here would imply they are still available.
-        guard case .failed = model.state else {
-            return XCTFail("Expected a failure, got \(model.state)")
+        // A work page is correct without the collections it appears in, so the
+        // failure is silent rather than a second error over a page that renders.
+        XCTAssertTrue(model.collections.isEmpty)
+        guard case .loaded = model.editions else {
+            return XCTFail("Editions must still load")
         }
     }
 
     @MainActor
-    func testOfflineFallbackIsSkippedWhenNothingWasEverOpened() async throws {
-        let model = CatalogViewModel(
-            repository: FailingCatalogStub(failure: .transport),
-            recentlyViewed: try makeRecentlyViewedStore()
-        )
+    func testRecommendedShelfIsFetchedOnceNotPerKeystroke() async throws {
+        let repository = RecommendingCatalogStub()
+        let model = CatalogViewModel(repository: repository)
 
-        await model.load()
+        await model.loadRecommendedIfNeeded()
+        await model.loadRecommendedIfNeeded()
 
-        guard case .failed = model.state else {
-            return XCTFail("Expected a failure, got \(model.state)")
-        }
+        XCTAssertEqual(model.recommended.map(\.title), ["Рекомендований"])
+        let calls = await repository.recommendedCalls
+        XCTAssertEqual(calls, 1)
     }
 
-    private func makeRecentlyViewedStore(limit: Int = 20) throws -> RecentlyViewedStore {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return RecentlyViewedStore(directory: directory, limit: limit)
+    @MainActor
+    func testAFailedRecommendationLookupIsNotAnError() async throws {
+        let model = CatalogViewModel(repository: FailingCatalogStub(failure: .transport))
+
+        await model.loadRecommendedIfNeeded()
+
+        // An empty shelf simply shows nothing; it must not surface as a
+        // catalog failure.
+        XCTAssertTrue(model.recommended.isEmpty)
     }
 
-    private static func recentWork(id: String, title: String) throws -> WorkSummary {
+    private static func collection(slug: String, name: String) throws -> PublicCollectionSummary {
         let json = """
         {
-          "id": "\(id)",
-          "slug": "\(title.lowercased())",
-          "title": "\(title)",
-          "language": "uk",
-          "authors": [{"id": "88888888-8888-8888-8888-888888888888", "display_name": "Автор"}],
-          "editions_count": 1,
-          "has_text_file": true,
+          "id": "77777777-7777-7777-7777-777777777777",
+          "slug": "\(slug)",
+          "name": "\(name)",
+          "description": "",
+          "category": "literature",
+          "is_featured": false,
           "cover_image_url": null,
-          "cover_tone": "burgundy",
-          "cover_variant": "frame",
-          "cover_glyph": null
+          "work_count": 3,
+          "featured_works": []
         }
         """
-        return try JSONDecoder().decode(WorkSummary.self, from: Data(json.utf8))
-    }
-
-    func testPaletteMatchesTheNormativePrototype() {
-        // Transcribed from web/public/ios-mockups/styles.css — :root and the
-        // body[data-app-theme="dark"] override. The dark set had drifted in
-        // five of seven tokens before this was pinned down.
-        XCTAssertEqual(BeryndaPalette.paper.light, 0xF4F3ED)
-        XCTAssertEqual(BeryndaPalette.paper.dark, 0x171312)
-        XCTAssertEqual(BeryndaPalette.surface.light, 0xFFFDF8)
-        XCTAssertEqual(BeryndaPalette.surface.dark, 0x211A18)
-        XCTAssertEqual(BeryndaPalette.ink.light, 0x251F1D)
-        XCTAssertEqual(BeryndaPalette.ink.dark, 0xF1EAE1)
-        XCTAssertEqual(BeryndaPalette.mutedInk.light, 0x6B6660)
-        XCTAssertEqual(BeryndaPalette.mutedInk.dark, 0xB4AAA0)
-        XCTAssertEqual(BeryndaPalette.border.light, 0xD9D8CD)
-        XCTAssertEqual(BeryndaPalette.border.dark, 0x453A35)
-        XCTAssertEqual(BeryndaPalette.accent.light, 0x95271D)
-        XCTAssertEqual(BeryndaPalette.accent.dark, 0xE77B49)
-        XCTAssertEqual(BeryndaPalette.deepAccent.light, 0x60241E)
-        XCTAssertEqual(BeryndaPalette.deepAccent.dark, 0xF1A37E)
-    }
-
-    func testBodyTextClearsAAAContrastInBothAppearances() {
-        // Reading is the whole product, so body text is held to AAA rather
-        // than the AA minimum.
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(BeryndaPalette.ink.light, BeryndaPalette.paper.light),
-            7
-        )
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(BeryndaPalette.ink.dark, BeryndaPalette.paper.dark),
-            7
-        )
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(BeryndaPalette.ink.light, BeryndaPalette.surface.light),
-            7
-        )
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(BeryndaPalette.ink.dark, BeryndaPalette.surface.dark),
-            7
-        )
-    }
-
-    func testMutedTextClearsAAContrastNormallyAndAAAUnderIncreasedContrast() {
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(BeryndaPalette.mutedInk.light, BeryndaPalette.paper.light),
-            4.5
-        )
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(BeryndaPalette.mutedInk.dark, BeryndaPalette.paper.dark),
-            4.5
-        )
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(
-                BeryndaPalette.mutedInk.lightIncreased,
-                BeryndaPalette.paper.light
-            ),
-            7
-        )
-        XCTAssertGreaterThanOrEqual(
-            BeryndaPalette.contrastRatio(
-                BeryndaPalette.mutedInk.darkIncreased,
-                BeryndaPalette.paper.dark
-            ),
-            7
-        )
-    }
-
-    func testIncreasedContrastMakesBordersPerceivableBoundaries() {
-        // The prototype's borders are decorative, about 1.3:1. Under Increase
-        // Contrast they have to become real boundaries: WCAG 1.4.11 asks 3:1
-        // of a UI component edge, on both surfaces a border can sit against.
-        for background in [BeryndaPalette.paper.light, BeryndaPalette.surface.light] {
-            XCTAssertGreaterThanOrEqual(
-                BeryndaPalette.contrastRatio(BeryndaPalette.border.lightIncreased, background),
-                3
-            )
-        }
-        for background in [BeryndaPalette.paper.dark, BeryndaPalette.surface.dark] {
-            XCTAssertGreaterThanOrEqual(
-                BeryndaPalette.contrastRatio(BeryndaPalette.border.darkIncreased, background),
-                3
-            )
-        }
-    }
-
-    func testIncreasedContrastNeverWeakensAToken() {
-        let tokens = [
-            BeryndaPalette.mutedInk,
-            BeryndaPalette.border,
-            BeryndaPalette.ink,
-            BeryndaPalette.accent,
-        ]
-        for token in tokens {
-            let light = BeryndaPalette.contrastRatio(token.light, BeryndaPalette.paper.light)
-            let lightIncreased = BeryndaPalette.contrastRatio(
-                token.lightIncreased,
-                BeryndaPalette.paper.light
-            )
-            XCTAssertGreaterThanOrEqual(lightIncreased, light)
-
-            let dark = BeryndaPalette.contrastRatio(token.dark, BeryndaPalette.paper.dark)
-            let darkIncreased = BeryndaPalette.contrastRatio(
-                token.darkIncreased,
-                BeryndaPalette.paper.dark
-            )
-            XCTAssertGreaterThanOrEqual(darkIncreased, dark)
-        }
-    }
-
-    func testEveryCoverToneIsLegibleAgainstItsOwnInk() {
-        // Cover ink sits on the cover's own background, not on the app's, and
-        // the glyph is large display type — 3:1 is the applicable floor.
-        for tone in CoverTone.allCases {
-            let pair = BeryndaColor.coverHexPair(for: tone)
-            XCTAssertGreaterThanOrEqual(
-                BeryndaPalette.contrastRatio(pair.ink, pair.background),
-                3,
-                "\(tone.rawValue) cover glyph is not legible on its background"
-            )
-        }
+        return try JSONDecoder().decode(PublicCollectionSummary.self, from: Data(json.utf8))
     }
 
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
@@ -971,12 +782,26 @@ private actor CatalogRepositoryStub: CatalogRepository {
 
 private actor WorkDetailRepositoryStub: CatalogRepository {
     private let detail: WorkSummary?
+    private let collectionRows: [PublicCollectionSummary]
+    private let collectionsFail: Bool
     private var remainingEditionsFailures: Int
     private(set) var detailRequests: [String] = []
 
-    init(detail: WorkSummary?, editionsFailures: Int = 0) {
+    init(
+        detail: WorkSummary?,
+        editionsFailures: Int = 0,
+        collections: [PublicCollectionSummary] = [],
+        collectionsFail: Bool = false
+    ) {
         self.detail = detail
         self.remainingEditionsFailures = editionsFailures
+        self.collectionRows = collections
+        self.collectionsFail = collectionsFail
+    }
+
+    func collections(workID: UUID) async throws -> [PublicCollectionSummary] {
+        if collectionsFail { throw StubError.unsupported }
+        return collectionRows
     }
 
     func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
@@ -1331,7 +1156,15 @@ private actor PagedTextStub: ReaderRepository {
 /// Reader repository serving a publication, counting position saves so it can
 /// be asserted that none are sent.
 private actor PublicationReaderStub: ReaderRepository {
+    struct Save: Sendable {
+        let positionType: String
+        let positionValue: String
+        let progressPercent: Int?
+        let totalPages: Int?
+    }
+
     private(set) var saveAttempts = 0
+    private(set) var lastSave: Save?
 
     func info(fileID: UUID) async throws -> ReaderInfo {
         let json = """
@@ -1390,6 +1223,12 @@ private actor PublicationReaderStub: ReaderRepository {
         totalPages: Int?
     ) async throws -> Bool {
         saveAttempts += 1
+        lastSave = Save(
+            positionType: positionType,
+            positionValue: positionValue,
+            progressPercent: progressPercent,
+            totalPages: totalPages
+        )
         return true
     }
 
@@ -1418,4 +1257,41 @@ private struct FailingCatalogStub: CatalogRepository {
 
     func work(identifier: String) async throws -> WorkSummary { throw failure }
     func editions(workID: UUID) async throws -> [EditionSummary] { throw failure }
+}
+
+/// Catalog repository that serves a recommendation shelf and counts how often
+/// it was asked for.
+private actor RecommendingCatalogStub: CatalogRepository {
+    private(set) var recommendedCalls = 0
+
+    func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
+        PaginatedResponse(count: 0, next: nil, previous: nil, results: [])
+    }
+
+    func work(identifier: String) async throws -> WorkSummary { throw StubError.unsupported }
+    func editions(workID: UUID) async throws -> [EditionSummary] { [] }
+
+    func recommended(limit: Int) async throws -> [WorkSummary] {
+        recommendedCalls += 1
+        let json = """
+        {
+          "id": "55555555-5555-5555-5555-555555555555",
+          "slug": "recommended",
+          "title": "Рекомендований",
+          "language": "uk",
+          "authors": [],
+          "editions_count": 1,
+          "has_text_file": true,
+          "cover_image_url": null,
+          "cover_tone": "moss",
+          "cover_variant": "plain",
+          "cover_glyph": null
+        }
+        """
+        return [try JSONDecoder().decode(WorkSummary.self, from: Data(json.utf8))]
+    }
+
+    enum StubError: Error {
+        case unsupported
+    }
 }

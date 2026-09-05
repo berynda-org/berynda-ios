@@ -270,8 +270,10 @@ struct ReaderView: View {
                         payload: payload,
                         fileID: model.fileID,
                         initialProgressPercent: model.info?.readingPosition?.progressPercent,
+                        initialLocator: model.info?.readingPosition?.locator,
                         allowsCopy: model.info?.rights.canCopyText == true,
                         allowsShare: model.info?.rights.canShare == true,
+                        onLocatorChange: { model.publicationDidMove(to: $0) },
                         onRetry: { Task { await model.load() } }
                     )
                 case nil:

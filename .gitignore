@@ -4,3 +4,15 @@ DerivedData/
 Berynda.xcodeproj/
 *.xcuserstate
 xcuserdata/
+
+# Signing and credential material. Never belongs in the repo, which is public.
+*.p12
+*.key
+*.p8
+*.cer
+*.csr
+*.pem
+*.mobileprovision
+*.certSigningRequest
+*.keychain-db
+.appstoreconnect/

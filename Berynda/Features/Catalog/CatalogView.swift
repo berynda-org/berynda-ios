@@ -5,7 +5,10 @@ struct CatalogView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     var body: some View {
-        CatalogLoadedView(repository: environment.catalogRepository)
+        CatalogLoadedView(
+            repository: environment.catalogRepository,
+            recentlyViewed: environment.recentlyViewed
+        )
     }
 }
 
@@ -13,8 +16,13 @@ private struct CatalogLoadedView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var model: CatalogViewModel
 
-    init(repository: any CatalogRepository) {
-        _model = StateObject(wrappedValue: CatalogViewModel(repository: repository))
+    init(repository: any CatalogRepository, recentlyViewed: RecentlyViewedStore) {
+        _model = StateObject(
+            wrappedValue: CatalogViewModel(
+                repository: repository,
+                recentlyViewed: recentlyViewed
+            )
+        )
     }
 
     var body: some View {
@@ -43,6 +51,10 @@ private struct CatalogLoadedView: View {
                     message: message,
                     retry: { Task { await model.load() } }
                 )
+            case let .offlineFallback(recent):
+                RecentlyViewedList(works: recent) {
+                    Task { await model.load() }
+                }
             }
         }
             .background(BeryndaColor.paper)
@@ -77,8 +89,17 @@ struct TabletCatalogColumn: View {
     @StateObject private var model: CatalogViewModel
     @Binding var selection: CatalogDestination?
 
-    init(repository: any CatalogRepository, selection: Binding<CatalogDestination?>) {
-        _model = StateObject(wrappedValue: CatalogViewModel(repository: repository))
+    init(
+        repository: any CatalogRepository,
+        recentlyViewed: RecentlyViewedStore,
+        selection: Binding<CatalogDestination?>
+    ) {
+        _model = StateObject(
+            wrappedValue: CatalogViewModel(
+                repository: repository,
+                recentlyViewed: recentlyViewed
+            )
+        )
         _selection = selection
     }
 
@@ -107,6 +128,10 @@ struct TabletCatalogColumn: View {
                     message: message,
                     retry: { Task { await model.load() } }
                 )
+            case let .offlineFallback(recent):
+                RecentlyViewedList(works: recent) {
+                    Task { await model.load() }
+                }
             }
         }
         .navigationTitle("Каталог")
@@ -261,6 +286,63 @@ private struct CollectionShelf: View {
         )) {
             Button("Гаразд", role: .cancel) {}
         } message: { Text(saveMessage ?? "") }
+    }
+}
+
+/// Shown when the catalog could not be reached at all. These rows carry only
+/// what was stored on the device, so they route to the work and nothing more —
+/// no availability or rights claims are made offline.
+private struct RecentlyViewedList: View {
+    @EnvironmentObject private var environment: AppEnvironment
+    let works: [RecentlyViewedWork]
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Label("Немає з’єднання — показано нещодавно переглянуті", systemImage: "wifi.slash")
+                    .font(.footnote)
+                    .foregroundStyle(BeryndaColor.mutedInk)
+                Spacer()
+                Button("Оновити", action: retry)
+                    .font(.footnote.weight(.semibold))
+                    .accessibilityIdentifier("catalog.offline-retry")
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .background(BeryndaColor.surface)
+
+            List(works) { work in
+                Button {
+                    environment.catalogPath.append(.linkedWork(identifier: work.slug))
+                } label: {
+                    HStack(alignment: .top, spacing: 14) {
+                        BeryndaBookCover(
+                            title: work.title,
+                            imageURL: nil,
+                            design: work.coverDesign
+                        )
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(work.title)
+                                .font(.headline)
+                                .foregroundStyle(BeryndaColor.ink)
+                            if !work.authorNames.isEmpty {
+                                Text(work.authorNames.joined(separator: ", "))
+                                    .font(.subheadline)
+                                    .foregroundStyle(BeryndaColor.mutedInk)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("catalog.recent.\(work.id)")
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(BeryndaColor.paper)
+        }
+        .accessibilityIdentifier("catalog.offline-fallback")
     }
 }
 

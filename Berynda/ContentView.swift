@@ -110,6 +110,7 @@ private struct TabletRootView: View {
             case .catalog:
                 TabletCatalogColumn(
                     repository: environment.catalogRepository,
+                    recentlyViewed: environment.recentlyViewed,
                     selection: $environment.tabletCatalogSelection
                 )
             case .library:

@@ -9,6 +9,9 @@ final class CatalogViewModel: ObservableObject {
         case loading
         case loaded([WorkSummary], totalCount: Int)
         case failed(String)
+        /// Offline with nothing to show from the network, but the reader has
+        /// opened works before — those are more useful than an error alone.
+        case offlineFallback([RecentlyViewedWork])
     }
 
     @Published private(set) var state: State = .idle
@@ -18,13 +21,15 @@ final class CatalogViewModel: ObservableObject {
     @Published var readableOnly = false
     @Published var languageFilter: String?
     private let repository: any CatalogRepository
+    private let recentlyViewed: RecentlyViewedStore?
     private var searchTask: Task<Void, Never>?
     private var currentPage = 0
     private var hasNextPage = false
     private var loadGeneration = 0
 
-    init(repository: any CatalogRepository) {
+    init(repository: any CatalogRepository, recentlyViewed: RecentlyViewedStore? = nil) {
         self.repository = repository
+        self.recentlyViewed = recentlyViewed
     }
 
     deinit { searchTask?.cancel() }
@@ -51,6 +56,16 @@ final class CatalogViewModel: ObservableObject {
             return
         } catch {
             guard generation == loadGeneration else { return }
+            // Only a request that never completed falls back. A 403, 404, or
+            // malformed response is a real answer about the catalog and must
+            // not be papered over with a list of things the reader happened to
+            // open before.
+            if case .transport = error as? APIError ?? .invalidResponse,
+               let recent = await recentlyViewed?.recent(),
+               !recent.isEmpty {
+                state = .offlineFallback(recent)
+                return
+            }
             state = .failed(error.localizedDescription)
         }
     }

@@ -241,12 +241,17 @@ Review.
    and reusable loading/empty/error/offline states are implemented. Formal
    dark/increased-contrast review and screenshot comparison with the HTML
    mockups remain.
-6. **Catalog completion — partial:** production-compatible prefix search,
+6. **Catalog completion — implemented except recommendations:** prefix search,
    debouncing, stale-response suppression, continuous pagination,
-   de-duplication, pull-to-refresh, and page-level retry are implemented and
-   app-unit tested. Readable/filter controls, featured and saved public
-   collections, recommendations, removal/restriction fixtures, and recently
-   viewed offline fallback remain.
+   de-duplication, pull-to-refresh, page-level retry, readable/language filter
+   controls, and featured and saved public collections are all implemented and
+   app-unit tested. Recently viewed is now kept on device and shown when a
+   catalog request never completes — only then, since a 403 or 404 is a real
+   answer and stale rows would imply those works are still available. That
+   history follows the reading-history privacy setting: with it off nothing is
+   written and anything stored is dropped. **Recommendations are blocked:** the
+   API exposes no recommendation route, and inventing a client-side ranking
+   would present the app's guess as the catalog's judgement.
 7. **Work and edition completion — implemented except collection links:** the
    detail page now enriches a thin catalog row with the full work record
    (contributors by role, original title, literary form, genres, topics,

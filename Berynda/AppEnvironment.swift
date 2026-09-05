@@ -11,6 +11,7 @@ final class AppEnvironment: ObservableObject {
     let account: AccountViewModel
     let library: LibraryViewModel
     let localReadingPositions: LocalReadingPositionStore
+    let recentlyViewed: RecentlyViewedStore
     @Published var selectedTab: RootTab = .catalog
     @Published var pendingRoute: AppRoute?
     @Published var catalogPath: [CatalogDestination] = []
@@ -35,6 +36,7 @@ final class AppEnvironment: ObservableObject {
         self.session = session
         let localReadingPositions = LocalReadingPositionStore()
         self.localReadingPositions = localReadingPositions
+        self.recentlyViewed = RecentlyViewedStore()
         let account = AccountViewModel(
             session: session,
             authentication: authentication,

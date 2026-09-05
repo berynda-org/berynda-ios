@@ -56,6 +56,15 @@ struct WorkDetailView: View {
             Text(saveMessage ?? "")
         }
         .task { await model.load() }
+        .task {
+            // Reading history is a privacy setting, so a reader who turned it
+            // off leaves no trace here either.
+            guard environment.account.profile?.readingHistoryEnabled != false else {
+                await environment.recentlyViewed.clear()
+                return
+            }
+            await environment.recentlyViewed.record(work)
+        }
     }
 
     private var header: some View {

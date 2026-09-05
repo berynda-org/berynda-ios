@@ -597,6 +597,136 @@ final class BeryndaTests: XCTestCase {
         XCTAssertEqual(Set(entries.map(\.id)).count, entries.count)
     }
 
+    func testRecentlyViewedKeepsMostRecentFirstWithoutDuplicates() async throws {
+        let store = try makeRecentlyViewedStore()
+        let first = try Self.recentWork(id: "11111111-1111-1111-1111-111111111111", title: "Кобзар")
+        let second = try Self.recentWork(id: "22222222-2222-2222-2222-222222222222", title: "Енеїда")
+
+        await store.record(first, at: Date(timeIntervalSince1970: 100))
+        await store.record(second, at: Date(timeIntervalSince1970: 200))
+        // Re-opening moves a work to the front rather than duplicating it.
+        await store.record(first, at: Date(timeIntervalSince1970: 300))
+
+        let recent = await store.recent()
+        XCTAssertEqual(recent.map(\.title), ["Кобзар", "Енеїда"])
+    }
+
+    func testRecentlyViewedIsBounded() async throws {
+        let store = try makeRecentlyViewedStore(limit: 3)
+        for index in 1...6 {
+            let work = try Self.recentWork(
+                id: "0000000\(index)-1111-1111-1111-111111111111",
+                title: "Твір \(index)"
+            )
+            await store.record(work, at: Date(timeIntervalSince1970: TimeInterval(index)))
+        }
+
+        let recent = await store.recent()
+        XCTAssertEqual(recent.count, 3)
+        XCTAssertEqual(recent.map(\.title), ["Твір 6", "Твір 5", "Твір 4"])
+    }
+
+    func testRecentlyViewedSurvivesAStoreRestartAndCanBeCleared() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let store = RecentlyViewedStore(directory: directory)
+        await store.record(try Self.recentWork(
+            id: "11111111-1111-1111-1111-111111111111",
+            title: "Кобзар"
+        ))
+
+        let relaunched = RecentlyViewedStore(directory: directory)
+        let restored = await relaunched.recent()
+        XCTAssertEqual(restored.map(\.title), ["Кобзар"])
+
+        await relaunched.clear()
+        let cleared = await relaunched.recent()
+        XCTAssertTrue(cleared.isEmpty)
+    }
+
+    @MainActor
+    func testCatalogFallsBackToRecentlyViewedWhenTheRequestNeverCompletes() async throws {
+        let store = try makeRecentlyViewedStore()
+        await store.record(try Self.recentWork(
+            id: "11111111-1111-1111-1111-111111111111",
+            title: "Кобзар"
+        ))
+        let model = CatalogViewModel(
+            repository: FailingCatalogStub(failure: .transport),
+            recentlyViewed: store
+        )
+
+        await model.load()
+
+        guard case let .offlineFallback(recent) = model.state else {
+            return XCTFail("Expected the offline fallback, got \(model.state)")
+        }
+        XCTAssertEqual(recent.map(\.title), ["Кобзар"])
+    }
+
+    @MainActor
+    func testARemovedWorkReportsTheFailureRatherThanShowingStaleRows() async throws {
+        let store = try makeRecentlyViewedStore()
+        await store.record(try Self.recentWork(
+            id: "11111111-1111-1111-1111-111111111111",
+            title: "Кобзар"
+        ))
+        let model = CatalogViewModel(
+            repository: FailingCatalogStub(failure: .notFound(APIErrorContext())),
+            recentlyViewed: store
+        )
+
+        await model.load()
+
+        // A 404 is a real answer about the catalog: showing previously opened
+        // works here would imply they are still available.
+        guard case .failed = model.state else {
+            return XCTFail("Expected a failure, got \(model.state)")
+        }
+    }
+
+    @MainActor
+    func testOfflineFallbackIsSkippedWhenNothingWasEverOpened() async throws {
+        let model = CatalogViewModel(
+            repository: FailingCatalogStub(failure: .transport),
+            recentlyViewed: try makeRecentlyViewedStore()
+        )
+
+        await model.load()
+
+        guard case .failed = model.state else {
+            return XCTFail("Expected a failure, got \(model.state)")
+        }
+    }
+
+    private func makeRecentlyViewedStore(limit: Int = 20) throws -> RecentlyViewedStore {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return RecentlyViewedStore(directory: directory, limit: limit)
+    }
+
+    private static func recentWork(id: String, title: String) throws -> WorkSummary {
+        let json = """
+        {
+          "id": "\(id)",
+          "slug": "\(title.lowercased())",
+          "title": "\(title)",
+          "language": "uk",
+          "authors": [{"id": "88888888-8888-8888-8888-888888888888", "display_name": "Автор"}],
+          "editions_count": 1,
+          "has_text_file": true,
+          "cover_image_url": null,
+          "cover_tone": "burgundy",
+          "cover_variant": "frame",
+          "cover_glyph": null
+        }
+        """
+        return try JSONDecoder().decode(WorkSummary.self, from: Data(json.utf8))
+    }
+
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
@@ -1145,4 +1275,26 @@ private actor PublicationReaderStub: ReaderRepository {
     enum StubError: Error {
         case unsupported
     }
+}
+
+/// Catalog repository that always fails with a chosen error, for asserting
+/// which failures fall back to on-device history and which surface as errors.
+private struct FailingCatalogStub: CatalogRepository {
+    let failure: APIError
+
+    func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
+        throw failure
+    }
+
+    func works(
+        search: String?,
+        page: Int,
+        readableOnly: Bool,
+        language: String?
+    ) async throws -> PaginatedResponse<WorkSummary> {
+        throw failure
+    }
+
+    func work(identifier: String) async throws -> WorkSummary { throw failure }
+    func editions(workID: UUID) async throws -> [EditionSummary] { throw failure }
 }

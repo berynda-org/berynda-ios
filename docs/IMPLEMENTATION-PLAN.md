@@ -236,11 +236,20 @@ Review.
    remains in slice 10. Team `KHMPLP3CXQ` is configured and the web repository
    contains the AASA routes for works and readers; production deployment and
    end-to-end universal-link verification remain.
-5. **Design-system completion — partial:** shared spacing, twelve canonical
-   cover palettes, uploaded-cover loading with a native generated fallback,
-   and reusable loading/empty/error/offline states are implemented. Formal
-   dark/increased-contrast review and screenshot comparison with the HTML
-   mockups remain.
+5. **Design-system completion — implemented except a visual screenshot pass:**
+   shared spacing, twelve canonical cover palettes, uploaded-cover loading with
+   a native generated fallback, and reusable loading/empty/error/offline states
+   were already in place. The dark palette has now been diffed against the
+   normative prototype token by token: it had drifted in five of seven values,
+   most visibly `ink`, which was near-pure white where the design calls for a
+   warm off-white. All seven now match `web/public/ios-mockups/styles.css`.
+   Increase Contrast is supported, strengthening muted text past AAA and
+   turning the prototype's decorative ~1.3:1 borders into perceivable 3:1
+   boundaries. `BeryndaPalette` holds the raw values so all of this is asserted
+   by tests rather than reviewed by eye — a resolved `Color` cannot be read
+   back, which is how the drift went unnoticed. **Remaining:** side-by-side
+   screenshot comparison at representative iPhone and iPad sizes, which needs
+   a machine that can run the simulator.
 6. **Catalog completion — implemented except recommendations:** prefix search,
    debouncing, stale-response suppression, continuous pagination,
    de-duplication, pull-to-refresh, page-level retry, readable/language filter

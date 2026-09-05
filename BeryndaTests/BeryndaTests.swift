@@ -727,6 +727,127 @@ final class BeryndaTests: XCTestCase {
         return try JSONDecoder().decode(WorkSummary.self, from: Data(json.utf8))
     }
 
+    func testPaletteMatchesTheNormativePrototype() {
+        // Transcribed from web/public/ios-mockups/styles.css — :root and the
+        // body[data-app-theme="dark"] override. The dark set had drifted in
+        // five of seven tokens before this was pinned down.
+        XCTAssertEqual(BeryndaPalette.paper.light, 0xF4F3ED)
+        XCTAssertEqual(BeryndaPalette.paper.dark, 0x171312)
+        XCTAssertEqual(BeryndaPalette.surface.light, 0xFFFDF8)
+        XCTAssertEqual(BeryndaPalette.surface.dark, 0x211A18)
+        XCTAssertEqual(BeryndaPalette.ink.light, 0x251F1D)
+        XCTAssertEqual(BeryndaPalette.ink.dark, 0xF1EAE1)
+        XCTAssertEqual(BeryndaPalette.mutedInk.light, 0x6B6660)
+        XCTAssertEqual(BeryndaPalette.mutedInk.dark, 0xB4AAA0)
+        XCTAssertEqual(BeryndaPalette.border.light, 0xD9D8CD)
+        XCTAssertEqual(BeryndaPalette.border.dark, 0x453A35)
+        XCTAssertEqual(BeryndaPalette.accent.light, 0x95271D)
+        XCTAssertEqual(BeryndaPalette.accent.dark, 0xE77B49)
+        XCTAssertEqual(BeryndaPalette.deepAccent.light, 0x60241E)
+        XCTAssertEqual(BeryndaPalette.deepAccent.dark, 0xF1A37E)
+    }
+
+    func testBodyTextClearsAAAContrastInBothAppearances() {
+        // Reading is the whole product, so body text is held to AAA rather
+        // than the AA minimum.
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(BeryndaPalette.ink.light, BeryndaPalette.paper.light),
+            7
+        )
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(BeryndaPalette.ink.dark, BeryndaPalette.paper.dark),
+            7
+        )
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(BeryndaPalette.ink.light, BeryndaPalette.surface.light),
+            7
+        )
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(BeryndaPalette.ink.dark, BeryndaPalette.surface.dark),
+            7
+        )
+    }
+
+    func testMutedTextClearsAAContrastNormallyAndAAAUnderIncreasedContrast() {
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(BeryndaPalette.mutedInk.light, BeryndaPalette.paper.light),
+            4.5
+        )
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(BeryndaPalette.mutedInk.dark, BeryndaPalette.paper.dark),
+            4.5
+        )
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(
+                BeryndaPalette.mutedInk.lightIncreased,
+                BeryndaPalette.paper.light
+            ),
+            7
+        )
+        XCTAssertGreaterThanOrEqual(
+            BeryndaPalette.contrastRatio(
+                BeryndaPalette.mutedInk.darkIncreased,
+                BeryndaPalette.paper.dark
+            ),
+            7
+        )
+    }
+
+    func testIncreasedContrastMakesBordersPerceivableBoundaries() {
+        // The prototype's borders are decorative, about 1.3:1. Under Increase
+        // Contrast they have to become real boundaries: WCAG 1.4.11 asks 3:1
+        // of a UI component edge, on both surfaces a border can sit against.
+        for background in [BeryndaPalette.paper.light, BeryndaPalette.surface.light] {
+            XCTAssertGreaterThanOrEqual(
+                BeryndaPalette.contrastRatio(BeryndaPalette.border.lightIncreased, background),
+                3
+            )
+        }
+        for background in [BeryndaPalette.paper.dark, BeryndaPalette.surface.dark] {
+            XCTAssertGreaterThanOrEqual(
+                BeryndaPalette.contrastRatio(BeryndaPalette.border.darkIncreased, background),
+                3
+            )
+        }
+    }
+
+    func testIncreasedContrastNeverWeakensAToken() {
+        let tokens = [
+            BeryndaPalette.mutedInk,
+            BeryndaPalette.border,
+            BeryndaPalette.ink,
+            BeryndaPalette.accent,
+        ]
+        for token in tokens {
+            let light = BeryndaPalette.contrastRatio(token.light, BeryndaPalette.paper.light)
+            let lightIncreased = BeryndaPalette.contrastRatio(
+                token.lightIncreased,
+                BeryndaPalette.paper.light
+            )
+            XCTAssertGreaterThanOrEqual(lightIncreased, light)
+
+            let dark = BeryndaPalette.contrastRatio(token.dark, BeryndaPalette.paper.dark)
+            let darkIncreased = BeryndaPalette.contrastRatio(
+                token.darkIncreased,
+                BeryndaPalette.paper.dark
+            )
+            XCTAssertGreaterThanOrEqual(darkIncreased, dark)
+        }
+    }
+
+    func testEveryCoverToneIsLegibleAgainstItsOwnInk() {
+        // Cover ink sits on the cover's own background, not on the app's, and
+        // the glyph is large display type — 3:1 is the applicable floor.
+        for tone in CoverTone.allCases {
+            let pair = BeryndaColor.coverHexPair(for: tone)
+            XCTAssertGreaterThanOrEqual(
+                BeryndaPalette.contrastRatio(pair.ink, pair.background),
+                3,
+                "\(tone.rawValue) cover glyph is not legible on its background"
+            )
+        }
+    }
+
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)

@@ -3,17 +3,35 @@ import SwiftUI
 import UIKit
 
 enum BeryndaColor {
-    static let paper = Color(light: 0xF4F3ED, dark: 0x171312)
-    static let surface = Color(light: 0xFFFDF8, dark: 0x251F1D)
-    static let ink = Color(light: 0x251F1D, dark: 0xFFFDF8)
-    static let mutedInk = Color(light: 0x6B6660, dark: 0xC8C0B8)
-    static let border = Color(light: 0xD9D8CD, dark: 0x4A413E)
-    static let accent = Color(light: 0x95271D, dark: 0xE77B49)
-    static let deepAccent = Color(light: 0x60241E, dark: 0xF1A078)
+    // Values are taken from the normative prototype in
+    // `web/public/ios-mockups/styles.css`; the dark set is its
+    // `body[data-app-theme="dark"]` block. Light already matched; dark had
+    // drifted in five of seven tokens, most visibly `ink`, which was near-pure
+    // white where the design calls for a warm off-white — harsher than
+    // intended for long reading.
+    //
+    // The increased-contrast variants are this client's own: the prototype
+    // defines no high-contrast palette, and the standard borders are
+    // decorative (about 1.3:1) rather than perceivable boundaries. Under
+    // Increase Contrast they are strengthened past the 3:1 that WCAG 1.4.11
+    // asks of UI boundaries, and muted text past the 7:1 of AAA body text.
+    static let paper = Color(BeryndaPalette.paper)
+    static let surface = Color(BeryndaPalette.surface)
+    static let ink = Color(BeryndaPalette.ink)
+    static let mutedInk = Color(BeryndaPalette.mutedInk)
+    static let border = Color(BeryndaPalette.border)
+    static let accent = Color(BeryndaPalette.accent)
+    static let deepAccent = Color(BeryndaPalette.deepAccent)
+
+    static func coverPalette(for tone: CoverTone) -> (background: Color, ink: Color) {
+        let pair = coverHexPair(for: tone)
+        return (Color(hex: pair.background), Color(hex: pair.ink))
+    }
 
     /// One entry per `CoverTone`, so an unhandled tone is a compile error
-    /// rather than a work silently painted oxblood.
-    static func coverPalette(for tone: CoverTone) -> (background: Color, ink: Color) {
+    /// rather than a work silently painted oxblood. Exposed as raw values so
+    /// the glyph's legibility on each background can be asserted.
+    static func coverHexPair(for tone: CoverTone) -> (background: UInt, ink: UInt) {
         let values: (UInt, UInt)
         switch tone {
         case .oxblood: values = (0x6D2925, 0xFFF7E8)
@@ -29,14 +47,24 @@ enum BeryndaColor {
         case .aubergine: values = (0x4A2545, 0xF6ECF2)
         case .graphite: values = (0x37484A, 0xEEF1EC)
         }
-        return (Color(hex: values.0), Color(hex: values.1))
+        return (background: values.0, ink: values.1)
     }
 }
 
 private extension Color {
-    init(light: UInt, dark: UInt) {
+    /// Resolves against both the interface style and the Increase Contrast
+    /// accessibility setting, so a reader who turns it on gets stronger
+    /// boundaries and muted text without anything else changing.
+    init(_ token: BeryndaPalette.Token) {
         self.init(uiColor: UIColor { traits in
-            UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+            let isDark = traits.userInterfaceStyle == .dark
+            let isIncreased = traits.accessibilityContrast == .high
+            switch (isDark, isIncreased) {
+            case (false, false): return UIColor(hex: token.light)
+            case (false, true): return UIColor(hex: token.lightIncreased)
+            case (true, false): return UIColor(hex: token.dark)
+            case (true, true): return UIColor(hex: token.darkIncreased)
+            }
         })
     }
 

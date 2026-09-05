@@ -291,10 +291,15 @@ Review.
     protected temporary storage (`ProtectedTemporaryFile`, extracted so there
     is one implementation rather than two) and are deleted when the reader
     closes. Text size and line spacing now persist across readers and launches
-    instead of resetting each time. **Remaining:** TXT paged mode and anchor
-    navigation, native publication TOC/location navigation, publication
-    appearance controls, and exact resume interoperability rather than the
-    current approximate percentage restore.
+    instead of resetting each time. TXT paged mode reads a text derivative page
+    at a time using the API's `page_offsets`, which are Unicode-scalar indices
+    and are walked as such — neither `Character` nor `utf16` agrees with
+    Python's `str` indexing, and for Ukrainian text one decomposed character
+    would shift every later page. The body is fetched once and paging is pure
+    slicing; malformed offsets from the network are repaired rather than
+    trusted. **Remaining:** anchor navigation, native publication TOC/location
+    navigation, publication appearance controls, and exact resume
+    interoperability rather than the current approximate percentage restore.
 11. **Authentication UI:** login, registration, confirmation handoff, password
     reset, logout, relaunch persistence, and return to the action that prompted
     authentication while anonymous reading remains available.

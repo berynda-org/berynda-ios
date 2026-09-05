@@ -460,6 +460,84 @@ final class BeryndaTests: XCTestCase {
         XCTAssertFalse(model.canPrintDocument)
     }
 
+    @MainActor
+    func testPagedTextTurnsPagesWithoutRefetching() async throws {
+        let repository = PagedTextStub(
+            body: "Сторінка перша. Сторінка друга. Сторінка третя.",
+            pageOffsets: [0, 16, 32]
+        )
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        XCTAssertTrue(model.supportsTextPaging)
+        XCTAssertEqual(model.textPageCount, 3)
+        guard case let .text(continuous, _) = try XCTUnwrap(model.content) else {
+            return XCTFail("Expected text content")
+        }
+        XCTAssertEqual(continuous, "Сторінка перша. Сторінка друга. Сторінка третя.")
+
+        model.setTextPaged(true)
+        guard case let .text(firstPage, _) = try XCTUnwrap(model.content) else {
+            return XCTFail("Expected text content")
+        }
+        XCTAssertEqual(firstPage, "Сторінка перша. ")
+
+        model.selectPage(3)
+        guard case let .text(thirdPage, _) = try XCTUnwrap(model.content) else {
+            return XCTFail("Expected text content")
+        }
+        XCTAssertEqual(thirdPage, "Сторінка третя.")
+
+        // The body was fetched once; paging is pure slicing.
+        let fetches = await repository.textFetches
+        XCTAssertEqual(fetches, 1)
+    }
+
+    @MainActor
+    func testLeavingPagedTextRestoresTheWholeBody() async throws {
+        let repository = PagedTextStub(
+            body: "Перша. Друга.",
+            pageOffsets: [0, 7]
+        )
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        model.setTextPaged(true)
+        model.selectPage(2)
+        model.setTextPaged(false)
+
+        guard case let .text(body, _) = try XCTUnwrap(model.content) else {
+            return XCTFail("Expected text content")
+        }
+        XCTAssertEqual(body, "Перша. Друга.")
+        // The page is kept, so returning to paged mode lands where it was.
+        XCTAssertEqual(model.currentPage, 2)
+    }
+
+    @MainActor
+    func testPlainTextOffersNoPaging() async throws {
+        let repository = PagedTextStub(body: "Суцільний текст", pageOffsets: [])
+        let model = try await makeReaderModel(repository: repository, store: nil)
+
+        XCTAssertFalse(model.supportsTextPaging)
+        model.setTextPaged(true)
+        XCTAssertFalse(model.isTextPaged)
+        XCTAssertFalse(model.canGoForward)
+    }
+
+    @MainActor
+    func testPagedTextBoundsNavigationToItsPageCount() async throws {
+        let repository = PagedTextStub(body: "Перша. Друга.", pageOffsets: [0, 7])
+        let model = try await makeReaderModel(repository: repository, store: nil)
+        model.setTextPaged(true)
+
+        XCTAssertEqual(model.navigablePageCount, 2)
+        XCTAssertTrue(model.canGoForward)
+
+        model.selectPage(99)
+        XCTAssertEqual(model.currentPage, 2)
+        XCTAssertFalse(model.canGoForward)
+        XCTAssertTrue(model.canGoBackward)
+    }
+
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("BeryndaTests-\(UUID().uuidString)", isDirectory: true)
@@ -858,6 +936,82 @@ private actor RightsReaderStub: ReaderRepository {
         data.append(Data(repeating: 0x20, count: 32))
         return data
     }
+
+    enum StubError: Error {
+        case unsupported
+    }
+}
+
+/// Text reader whose body and page offsets are configurable, and which counts
+/// how often the body was fetched so paging can be shown to be pure slicing.
+private actor PagedTextStub: ReaderRepository {
+    private let body: String
+    private let pageOffsets: [Int]
+    private(set) var textFetches = 0
+
+    init(body: String, pageOffsets: [Int]) {
+        self.body = body
+        self.pageOffsets = pageOffsets
+    }
+
+    func info(fileID: UUID) async throws -> ReaderInfo {
+        // A text file has no document page count of its own: any pagination
+        // comes from the derivative's offsets.
+        let json = """
+        {
+          "file_id": "44444444-4444-4444-4444-444444444444",
+          "edition_id": "33333333-3333-3333-3333-333333333333",
+          "work_id": "11111111-1111-1111-1111-111111111111",
+          "book": {"title": "Енеїда", "authors": []},
+          "mime_type": "text/plain",
+          "rendering_mode": "txt",
+          "page_delivery": "client_full",
+          "pages_extracted": false,
+          "split_pending": false,
+          "split_failed": false,
+          "has_toc": false,
+          "total_pages": null,
+          "access_mode": "read_only",
+          "download_allowed": false,
+          "toc": [],
+          "reading_position": null,
+          "rights": {
+            "can_read": true,
+            "can_download_file": false,
+            "can_download_page": false,
+            "can_copy_text": true,
+            "can_print": false,
+            "can_share": true,
+            "restriction_reason": null
+          },
+          "page_labels": []
+        }
+        """
+        return try JSONDecoder().decode(ReaderInfo.self, from: Data(json.utf8))
+    }
+
+    func text(fileID: UUID) async throws -> TextReaderContent {
+        textFetches += 1
+        let offsets = pageOffsets.map(String.init).joined(separator: ",")
+        let escaped = body.replacingOccurrences(of: "\"", with: "\\\"")
+        let json = #"{"body":"\#(escaped)","page_offsets":[\#(offsets)]}"#
+        return try JSONDecoder().decode(TextReaderContent.self, from: Data(json.utf8))
+    }
+
+    func epubDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+    func fullDocument(fileID: UUID) async throws -> Data { throw StubError.unsupported }
+    func pagePDF(fileID: UUID, page: Int) async throws -> Data { throw StubError.unsupported }
+    func pageImage(fileID: UUID, page: Int, width: Int) async throws -> Data {
+        throw StubError.unsupported
+    }
+
+    func savePosition(
+        fileID: UUID,
+        positionType: String,
+        positionValue: String,
+        progressPercent: Int?,
+        totalPages: Int?
+    ) async throws -> Bool { true }
 
     enum StubError: Error {
         case unsupported

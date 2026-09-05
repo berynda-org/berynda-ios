@@ -60,6 +60,11 @@ final class ReaderViewModel: ObservableObject {
     /// the reader closes.
     @Published private(set) var exportableDocument: URL?
     private var exportTask: Task<Void, Never>?
+    /// Whole text body plus its page boundaries, kept so a page turn is a
+    /// substring rather than another walk over the book.
+    private var fullText = ""
+    private var textPageRanges: [Range<String.Index>] = []
+    @Published private(set) var isTextPaged = false
     /// Set when the server answers a position save with `recorded: false`,
     /// i.e. it declined to record because the reader's history policy is off.
     private var serverDeclinedToRecord = false
@@ -114,6 +119,14 @@ final class ReaderViewModel: ObservableObject {
 
     func selectPage(_ page: Int) {
         guard let info else { return }
+        if isTextPaged, supportsTextPaging {
+            let bounded = min(max(page, 1), textPageCount)
+            guard bounded != currentPage else { return }
+            currentPage = bounded
+            refreshVisibleText()
+            schedulePositionSave()
+            return
+        }
         let upperBound = max(info.totalPages ?? page, 1)
         let bounded = min(max(page, 1), upperBound)
         guard bounded != currentPage else { return }
@@ -176,6 +189,35 @@ final class ReaderViewModel: ObservableObject {
         await pageCache.store(fetched, for: facing)
         guard currentPage == page else { return }
         facingContent = Content(fetched)
+    }
+
+    /// Only a text derivative of a paginated source carries page offsets; a
+    /// plain .txt or .md has none and stays a single continuous body.
+    var supportsTextPaging: Bool { textPageRanges.count > 1 }
+
+    var textPageCount: Int { max(textPageRanges.count, 1) }
+
+    private var visibleText: String {
+        guard isTextPaged, supportsTextPaging else { return fullText }
+        return TextPagination.page(currentPage, in: fullText, ranges: textPageRanges)
+    }
+
+    /// Switches between one continuous body and page-at-a-time reading. The
+    /// page number is preserved, so leaving paged mode and returning lands
+    /// where the reader was.
+    func setTextPaged(_ paged: Bool) {
+        guard paged != isTextPaged, supportsTextPaging else { return }
+        isTextPaged = paged
+        if paged {
+            currentPage = min(max(currentPage, 1), textPageCount)
+        }
+        refreshVisibleText()
+        schedulePositionSave()
+    }
+
+    private func refreshVisibleText() {
+        guard case let .text(_, isMarkdown) = content else { return }
+        content = .text(visibleText, isMarkdown: isMarkdown)
     }
 
     /// Deny-by-default, and only for a document the app actually holds whole:
@@ -249,8 +291,14 @@ final class ReaderViewModel: ObservableObject {
 
     var canGoBackward: Bool { currentPage > 1 && !pageIsLoading }
 
+    /// Pages come from the text derivative when reading paged text, and from
+    /// the document itself otherwise.
+    var navigablePageCount: Int? {
+        isTextPaged && supportsTextPaging ? textPageCount : info?.totalPages
+    }
+
     var canGoForward: Bool {
-        guard !pageIsLoading, let total = info?.totalPages else { return false }
+        guard !pageIsLoading, let total = navigablePageCount else { return false }
         // In spread mode the step is two, so a spread whose right half is
         // already the last page has nowhere further to go.
         return currentPage + pageStep <= total
@@ -279,7 +327,15 @@ final class ReaderViewModel: ObservableObject {
         switch info.resource {
         case let .structuredText(isMarkdown):
             let response = try await repository.text(fileID: fileID)
-            content = .text(response.body, isMarkdown: isMarkdown)
+            fullText = response.body
+            textPageRanges = TextPagination.pageRanges(
+                in: response.body,
+                offsets: response.pageOffsets
+            )
+            if isTextPaged, supportsTextPaging {
+                currentPage = min(max(currentPage, 1), textPageRanges.count)
+            }
+            content = .text(visibleText, isMarkdown: isMarkdown)
         case .fullPDF, .pagePDF, .pageImage:
             let fetched = try await pageContent(info, page: currentPage)
             await pageCache.store(fetched, for: currentPage)

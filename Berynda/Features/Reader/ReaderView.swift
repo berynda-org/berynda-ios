@@ -88,6 +88,18 @@ struct ReaderView: View {
                         .accessibilityIdentifier("reader.appearance")
                     }
                 }
+                if model.supportsTextPaging {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(
+                            model.isTextPaged ? "Суцільний текст" : "Посторінково",
+                            systemImage: model.isTextPaged ? "scroll" : "book.pages"
+                        ) {
+                            model.setTextPaged(!model.isTextPaged)
+                            draftPage = Double(model.currentPage)
+                        }
+                        .accessibilityIdentifier("reader.text-paging")
+                    }
+                }
                 if model.info?.rights.canShare == true {
                     ToolbarItem(placement: .topBarTrailing) {
                         ShareLink(item: shareURL) {
@@ -274,6 +286,7 @@ struct ReaderView: View {
     }
 
     private var showsPageControls: Bool {
+        if model.isTextPaged, model.supportsTextPaging { return true }
         guard let info = model.info else { return false }
         return info.renderingMode == .pdf && (info.totalPages ?? 0) > 1
     }
@@ -287,7 +300,7 @@ struct ReaderView: View {
         VStack(spacing: 5) {
             Slider(
                 value: $draftPage,
-                in: 1...Double(max(model.info?.totalPages ?? 1, 1)),
+                in: 1...Double(max(model.navigablePageCount ?? 1, 1)),
                 step: 1
             ) { editing in
                 isScrubbing = editing

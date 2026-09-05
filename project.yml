@@ -80,6 +80,10 @@ targets:
     dependencies:
       - target: Berynda
       - package: BeryndaCore
+      # Explicit rather than relying on the app target's copy leaking through,
+      # so the publication TOC logic can be unit tested.
+      - package: Readium
+        product: ReadiumShared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.berynda.ios.tests

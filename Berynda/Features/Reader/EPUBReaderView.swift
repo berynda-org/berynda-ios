@@ -76,6 +76,76 @@ struct EPUBReaderView: View {
         } message: {
             Text(controller.notice ?? "")
         }
+        .sheet(isPresented: $showsContents) {
+            PublicationContentsSheet(entries: controller.tableOfContents) { entry in
+                showsContents = false
+                Task { await controller.go(to: entry) }
+            }
+        }
+        .sheet(isPresented: $showsAppearance) {
+            PublicationAppearanceSheet(fontSizeScale: $controller.fontSizeScale)
+        }
+    }
+}
+
+private struct PublicationContentsSheet: View {
+    let entries: [PublicationTOCEntry]
+    let onSelect: (PublicationTOCEntry) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(entries) { entry in
+                Button {
+                    onSelect(entry)
+                } label: {
+                    Text(entry.title)
+                        .font(entry.level == 0 ? .body.weight(.medium) : .body)
+                        .foregroundStyle(BeryndaColor.ink)
+                        // Nesting is shown as indentation rather than as
+                        // collapsible groups: a reader looking for a chapter
+                        // should not have to expand anything first.
+                        .padding(.leading, CGFloat(entry.level) * 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("publication.toc.\(entry.id)")
+            }
+            .listStyle(.plain)
+            .navigationTitle("Зміст")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct PublicationAppearanceSheet: View {
+    @Binding var fontSizeScale: Double
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Розмір тексту") {
+                    Slider(value: $fontSizeScale, in: 0.7...2.0, step: 0.1) {
+                        Text("Розмір тексту")
+                    }
+                    .accessibilityValue("\(Int((fontSizeScale * 100).rounded())) відсотків")
+                    .accessibilityIdentifier("publication.font-size")
+                    Button("Скинути") { fontSizeScale = 1.0 }
+                }
+            }
+            .navigationTitle("Вигляд")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Готово") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -92,6 +162,22 @@ private struct EPUBNavigatorHost: UIViewControllerRepresentable {
     ) {}
 }
 
+/// One row of a publication's table of contents, flattened for display.
+struct PublicationTOCEntry: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let level: Int
+    let link: Link
+
+    static func == (lhs: PublicationTOCEntry, rhs: PublicationTOCEntry) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
 @MainActor
 final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDelegate {
     enum Phase {
@@ -103,6 +189,19 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
     @Published private(set) var phase: Phase = .loading
     @Published private(set) var progressPercent: Int?
     @Published var notice: String?
+    /// The publication's own table of contents, empty when it declares none.
+    @Published private(set) var tableOfContents: [PublicationTOCEntry] = []
+    /// Persisted so a reader sets publication type size once, not per book.
+    /// Written straight to `UserDefaults` rather than through `@AppStorage`,
+    /// which does not drive `objectWillChange` outside a `View`.
+    @Published var fontSizeScale: Double {
+        didSet {
+            UserDefaults.standard.set(fontSizeScale, forKey: Self.fontSizeKey)
+            applyPreferences()
+        }
+    }
+
+    static let fontSizeKey = "reader.publication.fontSize"
 
     private let payload: EPUBPayload
     private let fileID: UUID
@@ -140,6 +239,9 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
         self.allowsShare = allowsShare
         self.onRetry = onRetry
         self.progressPercent = initialProgressPercent
+        let stored = UserDefaults.standard.double(forKey: Self.fontSizeKey)
+        // `double(forKey:)` answers 0 for a key that was never written.
+        self.fontSizeScale = stored > 0 ? stored : 1.0
     }
 
     func load() async {
@@ -181,6 +283,8 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
                 initialLocation = nil
             }
 
+            await loadTableOfContents(from: publication)
+
             var editingActions = allowsCopy ? EditingAction.defaultActions : []
             if !allowsShare { editingActions.removeAll { $0 == .share } }
 
@@ -192,6 +296,8 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
             navigator.delegate = self
             self.publication = publication
             phase = .ready(navigator)
+            // The stored type size has to reach a navigator that now exists.
+            applyPreferences()
         } catch is CancellationError {
             close()
         } catch {
@@ -246,6 +352,41 @@ final class EPUBReaderController: NSObject, ObservableObject, EPUBNavigatorDeleg
         if let remoteContentBlocker {
             userContentController.add(remoteContentBlocker)
         }
+    }
+
+    private func loadTableOfContents(from publication: Publication) async {
+        // A publication that declares no TOC is normal, not an error: the
+        // contents button simply is not offered.
+        guard let links = try? await publication.tableOfContents().get() else { return }
+        tableOfContents = Self.flatten(links)
+    }
+
+    /// Readium nests TOC links; the sheet shows one list, so depth becomes an
+    /// indent level rather than a hierarchy the reader has to expand.
+    static func flatten(_ links: [Link], level: Int = 0) -> [PublicationTOCEntry] {
+        links.flatMap { link -> [PublicationTOCEntry] in
+            let title = link.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let entry = PublicationTOCEntry(
+                id: "\(level)-\(link.href)",
+                title: (title?.isEmpty == false ? title : nil) ?? link.href,
+                level: level,
+                link: link
+            )
+            return [entry] + flatten(link.children, level: level + 1)
+        }
+    }
+
+    func go(to entry: PublicationTOCEntry) async {
+        guard case let .ready(navigator) = phase else { return }
+        let moved = await navigator.go(to: entry.link)
+        if !moved {
+            notice = "Не вдалося відкрити цей розділ."
+        }
+    }
+
+    func applyPreferences() {
+        guard case let .ready(navigator) = phase else { return }
+        navigator.submitPreferences(EPUBPreferences(fontSize: fontSizeScale))
     }
 
     private func cleanupTemporaryFile() {

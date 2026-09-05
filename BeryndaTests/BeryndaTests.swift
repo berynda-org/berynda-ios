@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import BeryndaCore
+import ReadiumShared
 @testable import Berynda
 
 final class BeryndaTests: XCTestCase {
@@ -550,6 +551,50 @@ final class BeryndaTests: XCTestCase {
         // position on every other client.
         let attempts = await repository.saveAttempts
         XCTAssertEqual(attempts, 0)
+    }
+
+    @MainActor
+    func testPublicationContentsFlattenNestedChaptersIntoIndentLevels() {
+        let toc = [
+            Link(
+                href: "chapter1.xhtml",
+                title: "Розділ перший",
+                children: [
+                    Link(href: "chapter1.xhtml#s1", title: "Частина 1"),
+                    Link(href: "chapter1.xhtml#s2", title: "Частина 2"),
+                ]
+            ),
+            Link(href: "chapter2.xhtml", title: "Розділ другий"),
+        ]
+
+        let entries = EPUBReaderController.flatten(toc)
+
+        XCTAssertEqual(
+            entries.map(\.title),
+            ["Розділ перший", "Частина 1", "Частина 2", "Розділ другий"]
+        )
+        XCTAssertEqual(entries.map(\.level), [0, 1, 1, 0])
+    }
+
+    @MainActor
+    func testPublicationContentsFallBackToTheHrefWhenATitleIsMissing() {
+        let entries = EPUBReaderController.flatten([
+            Link(href: "nav.xhtml", title: nil),
+            Link(href: "blank.xhtml", title: "   "),
+        ])
+
+        XCTAssertEqual(entries.map(\.title), ["nav.xhtml", "blank.xhtml"])
+    }
+
+    @MainActor
+    func testPublicationContentsEntriesAreUniquelyIdentified() {
+        // The same href at two depths must not collide, or the list would
+        // drop rows.
+        let entries = EPUBReaderController.flatten([
+            Link(href: "a.xhtml", title: "A", children: [Link(href: "a.xhtml", title: "A again")]),
+        ])
+
+        XCTAssertEqual(Set(entries.map(\.id)).count, entries.count)
     }
 
     private func makeTemporaryPositionStore() throws -> LocalReadingPositionStore {

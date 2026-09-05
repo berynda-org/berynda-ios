@@ -297,8 +297,12 @@ Review.
     Python's `str` indexing, and for Ukrainian text one decomposed character
     would shift every later page. The body is fetched once and paging is pure
     slicing; malformed offsets from the network are repaired rather than
-    trusted. **Remaining:** anchor navigation, native publication TOC/location
-    navigation, and publication appearance controls.
+    trusted. Publications now expose their own table of contents — flattened to
+    one indented list, so a reader looking for a chapter expands nothing — and
+    a type-size control that persists across books. **Remaining:** anchor
+    navigation inside a text body, which needs the body split into addressable
+    blocks and so trades away selection across block boundaries; that
+    trade-off should be decided rather than assumed.
 
     **Exact publication resume is blocked, and the plan item was wrong about
     what is achievable.** The web reader stores `position_type: "epub_cfi"`

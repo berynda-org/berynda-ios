@@ -29,8 +29,30 @@ struct EPUBReaderView: View {
         )
     }
 
+    @State private var showsContents = false
+    @State private var showsAppearance = false
+
     var body: some View {
         VStack(spacing: 0) {
+            if case .ready = controller.phase {
+                HStack(spacing: 18) {
+                    if !controller.tableOfContents.isEmpty {
+                        Button("Зміст", systemImage: "list.bullet") {
+                            showsContents = true
+                        }
+                        .accessibilityIdentifier("reader.publication-contents")
+                    }
+                    Spacer()
+                    Button("Розмір тексту", systemImage: "textformat.size") {
+                        showsAppearance = true
+                    }
+                    .accessibilityIdentifier("reader.publication-appearance")
+                }
+                .labelStyle(.iconOnly)
+                .padding(.horizontal, 20)
+                .frame(height: 40)
+            }
+
             Group {
                 switch controller.phase {
                 case .loading:

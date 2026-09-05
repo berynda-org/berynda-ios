@@ -1265,7 +1265,12 @@ private actor RecommendingCatalogStub: CatalogRepository {
     private(set) var recommendedCalls = 0
 
     func works(search: String?, page: Int) async throws -> PaginatedResponse<WorkSummary> {
-        PaginatedResponse(count: 0, next: nil, previous: nil, results: [])
+        // Decoded rather than constructed: `PaginatedResponse` has no public
+        // initializer, matching how the other stubs in this file build pages.
+        try JSONDecoder().decode(
+            PaginatedResponse<WorkSummary>.self,
+            from: Data(#"{"count":0,"next":null,"previous":null,"results":[]}"#.utf8)
+        )
     }
 
     func work(identifier: String) async throws -> WorkSummary { throw StubError.unsupported }

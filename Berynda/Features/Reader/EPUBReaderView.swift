@@ -1,3 +1,4 @@
+import BeryndaCore
 import Combine
 import ReadiumNavigator
 import ReadiumShared
